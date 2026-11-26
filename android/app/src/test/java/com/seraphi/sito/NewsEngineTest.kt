@@ -68,6 +68,8 @@ class NewsEngineTest {
         assertEquals(6, SourceDirectory.featured.map { it.url }.toSet().size)
         assertTrue(SourceDirectory.featured.all { it.url.startsWith(
             "https://raw.githubusercontent.com/plenaryapp/awesome-rss-feeds/") })
+        assertEquals(11, SourceDirectory.picks.size)
+        assertEquals(Region.SERBIA, SourceDirectory.picks.first().region)
     }
 
     @Test fun directorySuggestsSerbiaForSerbianHostsAndWorldElsewhere() {

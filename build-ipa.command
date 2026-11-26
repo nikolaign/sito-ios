@@ -5,7 +5,7 @@ REPO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 BUILD_DIR="$REPO_DIR/build"
 DERIVED_DATA="$BUILD_DIR/DerivedData"
 APP_PATH="$DERIVED_DATA/Build/Products/Release-iphoneos/Sito.app"
-APP_VERSION="0.9.4"
+APP_VERSION="0.9.5"
 IPA_PATH="$BUILD_DIR/SITO-${APP_VERSION}-unsigned.ipa"
 
 if ! command -v xcodebuild >/dev/null 2>&1; then

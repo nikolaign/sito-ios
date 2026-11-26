@@ -69,26 +69,34 @@ jobs:
           disable-animations: true
           script: gradle -p android :app:connectedDebugAndroidTest --no-daemon
 
-  publish-preview:
+  publish-release:
     needs: [build, device-smoke]
-    if: github.event_name == 'push' && startsWith(github.event.head_commit.message, 'Publish Android preview')
-    runs-on: ubuntu-latest
+    if: github.event_name == 'push' && startsWith(github.event.head_commit.message, 'Publish SITO v0.9.5')
+    runs-on: macos-15
     permissions:
       contents: write
     steps:
+      - uses: actions/checkout@v7
+      - name: Build matching iOS IPA
+        run: ./build-ipa.command
       - uses: actions/download-artifact@v8
         with:
           name: sito-android-development-apk
           path: output
-      - name: Publish tested Android APK beside the iOS IPA
+      - name: Publish tested APK and unsigned IPA
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: nikolaign/sito-ios
         shell: bash
         run: |
-          cp output/app-debug.apk SITO-0.9.4-android-preview.apk
-          unzip -tq SITO-0.9.4-android-preview.apk
-          sha256sum SITO-0.9.4-android-preview.apk
-          gh release upload v0.9.4 SITO-0.9.4-android-preview.apk --clobber
-          existing="$(gh release view v0.9.4 --json body --jq .body)"
-          printf '%s\n\nAndroid preview: install SITO-0.9.4-android-preview.apk on Android 8.0+. This is a debug-signed test package, not a Play Store release; switching build signatures requires uninstalling the old preview before installing a new one.\n' "$existing" | gh release edit v0.9.4 --notes-file -
+          cp output/app-debug.apk SITO-0.9.5-android-preview.apk
+          unzip -tq SITO-0.9.5-android-preview.apk
+          unzip -tq build/SITO-0.9.5-unsigned.ipa
+          shasum -a 256 SITO-0.9.5-android-preview.apk build/SITO-0.9.5-unsigned.ipa
+          if gh release view v0.9.5 >/dev/null 2>&1; then
+            gh release upload v0.9.5 SITO-0.9.5-android-preview.apk build/SITO-0.9.5-unsigned.ipa --clobber
+          else
+            gh release create v0.9.5 SITO-0.9.5-android-preview.apk build/SITO-0.9.5-unsigned.ipa \
+              --target "$GITHUB_SHA" --title 'SITO v0.9.5' \
+              --notes 'A quieter Archive & Backup screen, six working RSS collections, clearer Serbia/World source placement and refined gate puzzles on iOS and Android. Both packages passed compilation; Android was also tested on API 26 and 35 emulators. The iOS IPA is unsigned for compatible sideloading setups. The Android APK is debug-signed: its signature may differ from the earlier preview. Export an encrypted backup and keep your recovery key before uninstalling an older Android build. Never uninstall before preserving your data.'
+          fi

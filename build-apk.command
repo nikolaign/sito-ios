@@ -23,7 +23,7 @@ echo "Building SITO for Android…"
 gradle -p android :app:assembleDebug --no-daemon
 
 mkdir -p build
-cp android/app/build/outputs/apk/debug/app-debug.apk build/SITO-0.9.4-android-debug.apk
+cp android/app/build/outputs/apk/debug/app-debug.apk build/SITO-0.9.5-android-debug.apk
 echo ""
-echo "Android APK ready: $(pwd)/build/SITO-0.9.4-android-debug.apk"
+echo "Android APK ready: $(pwd)/build/SITO-0.9.5-android-debug.apk"
 echo "This is a debug-signed APK for testing."

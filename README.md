@@ -50,7 +50,7 @@ For an unsigned IPA intended for a compatible sideloading setup such as LiveCont
 ./build-ipa.command
 ```
 
-The resulting file is `build/SITO-0.9.4-unsigned.ipa`. It is **not** an App Store or normally signed iOS package.
+The resulting file is `build/SITO-0.9.5-unsigned.ipa`. It is **not** an App Store or normally signed iOS package.
 
 ### Android
 
@@ -60,11 +60,11 @@ The Android project is in `android/` and supports Android 8.0+. Clone with `git 
 gradle -p android :app:assembleDebug
 ```
 
-The installable test APK appears at `android/app/build/outputs/apk/debug/app-debug.apk`. Debug APKs are signed with the builder's debug certificate; for a distributable release with seamless future updates, use your own persistent release signing key. Android builds are checked in GitHub Actions on emulators.
+The installable test APK appears at `android/app/build/outputs/apk/debug/app-debug.apk`. Preview APKs use temporary debug certificates, so an older APK may not update in place. Before uninstalling, export a `.sitobackup` and save the recovery key: uninstalling removes local app data. A long-term release needs a persistent private signing key. Android builds are checked in GitHub Actions on emulators.
 
 On a Mac with Gradle and the Android SDK already installed, you can also double-click `build-apk.command`; it copies the APK into `build/` for easy access.
 
-You can also download unsigned IPAs from [Releases](https://github.com/nikolaign/sito-ios/releases) when a tagged build succeeds. For maintainers, the **iOS unsigned IPA** workflow can be run manually from GitHub Actions; creating a matching `v0.9.4` tag builds and publishes a release automatically.
+You can also download builds from [Releases](https://github.com/nikolaign/sito-ios/releases). The iOS unsigned IPA workflow runs for matching version tags or on demand.
 
 The optional Cloudflare Worker is in `cloudflare/`. You don't need it to build or read news. Its tests can be run with `node --test cloudflare/worker.test.mjs` on Node.js 22 or later.
 

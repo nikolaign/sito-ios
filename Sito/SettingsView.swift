@@ -31,6 +31,7 @@ struct SettingsView: View {
     @State private var showDiagnostics = false
     @State private var topicsExpanded = false
     @State private var sourcesExpanded = false
+    @State private var archiveExportsExpanded = false
     @AppStorage("advancedOptionsEnabled") private var advancedOptions = false
 
     private func tr(_ sr: String, _ en: String) -> String { prefs.language == "sr" ? sr : en }
@@ -152,6 +153,7 @@ struct SettingsView: View {
                     Button { showStorage = true } label: {
                         Label(tr("Skladište i backup", "Storage & Backups"), systemImage: "externaldrive.badge.icloud")
                     }
+                    DisclosureGroup(isExpanded: $archiveExportsExpanded) {
                     Button { makeJSON() } label: {
                         Label(tr("Izvezi arhivu · JSON", "Export archive · JSON"), systemImage: "square.and.arrow.up")
                     }
@@ -164,6 +166,9 @@ struct SettingsView: View {
                     .disabled(feed.completeArticles.isEmpty)
                     Button { importing = true } label: {
                         Label(tr("Uvezi arhivu · JSON", "Import archive · JSON"), systemImage: "square.and.arrow.down")
+                    }
+                    } label: {
+                        Label(tr("Dodatni formati izvoza", "Other export formats"), systemImage: "square.stack")
                     }
                     Text(tr("Arhivu možeš šifrovano sačuvati bilo gde ili podesiti sopstveni Cloudflare backup. Dodatne radnje su sklopljene dok ti ne zatrebaju.",
                             "Save an encrypted archive anywhere, or connect your own Cloudflare backup. Extra controls stay tucked away until you need them."))
@@ -181,7 +186,7 @@ struct SettingsView: View {
                         .accessibilityLabel(tr("Kontaktiraj seraphi mejlom", "Email seraphi"))
                     }
                     .font(.system(size: 14, design: .monospaced))
-                    LabeledContent(tr("Verzija", "Version"), value: "0.9.4")
+                    LabeledContent(tr("Verzija", "Version"), value: "0.9.5")
                 }
             }
             .navigationTitle(tr("Podešavanja", "Settings"))

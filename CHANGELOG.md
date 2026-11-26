@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.9.5
+
+- Simplified Archive & Backup without hiding recovery and cleanup options entirely.
+- Manual cloud backups now run an integrity check after uploading; repeat checks remain available under extra actions.
+- Replaced broken and overlapping source collections with six verified OPML category files.
+- Let each source choose Serbia or World when being added, with a sensible default based on its URL.
+- Refined failure animations, changed symbol memory to sequential reveals and added longer maze dead ends.
+- Added iOS compile checks alongside Android build and emulator tests.
+
 ## 0.9.4
 
 - Smoother scrolling with large feeds and fewer unnecessary refreshes when adding sources.

@@ -26,6 +26,20 @@ data class FeedDirectory(val id: String, val title: String, val url: String, val
 data class DirectoryFeed(val name: String, val feedURL: String, val group: String, val region: Region)
 
 object SourceDirectory {
+    val picks = listOf(
+        DirectoryFeed("N1", "https://n1info.rs/feed/", "Serbia", Region.SERBIA),
+        DirectoryFeed("Danas", "https://www.danas.rs/feed/", "Serbia", Region.SERBIA),
+        DirectoryFeed("KRIK", "https://www.krik.rs/feed/", "Investigations", Region.SERBIA),
+        DirectoryFeed("CINS", "https://www.cins.rs/feed/", "Investigations", Region.SERBIA),
+        DirectoryFeed("BBC World", "https://feeds.bbci.co.uk/news/world/rss.xml", "World", Region.WORLD),
+        DirectoryFeed("The Guardian", "https://www.theguardian.com/world/rss", "World", Region.WORLD),
+        DirectoryFeed("DW English", "https://rss.dw.com/xml/rss-en-all", "World", Region.WORLD),
+        DirectoryFeed("Nature", "https://www.nature.com/nature.rss", "Science", Region.WORLD),
+        DirectoryFeed("Ars Technica", "https://feeds.arstechnica.com/arstechnica/index", "Technology", Region.WORLD),
+        DirectoryFeed("TechRadar", "https://www.techradar.com/rss", "Technology", Region.WORLD),
+        DirectoryFeed("ScienceDaily", "https://www.sciencedaily.com/rss/all.xml", "Science", Region.WORLD),
+    )
+
     val featured = listOf(
         FeedDirectory("plenary-news", "News", "https://raw.githubusercontent.com/plenaryapp/awesome-rss-feeds/master/recommended/with_category/News.opml"),
         FeedDirectory("plenary-tech", "Technology", "https://raw.githubusercontent.com/plenaryapp/awesome-rss-feeds/master/recommended/with_category/Tech.opml"),
@@ -159,7 +173,8 @@ class DirectoryCache(context: Context) {
 fun SourceDirectoryScreen(sr: Boolean, settings: SettingsStore, context: Context,
                           foreground: Color, muted: Color, onBack: () -> Unit, onAdded: () -> Unit) {
     val cache = remember { DirectoryCache(context.applicationContext) }
-    var directories by remember { mutableStateOf(SourceDirectory.featured + cache.custom()) }
+    val picksDirectory = remember { FeedDirectory("picks", "SITO picks", "") }
+    var directories by remember { mutableStateOf(listOf(picksDirectory) + SourceDirectory.featured + cache.custom()) }
     var selected by remember { mutableStateOf<FeedDirectory?>(null) }
     var entries by remember { mutableStateOf<List<DirectoryFeed>>(emptyList()) }
     var loading by remember { mutableStateOf(false) }
@@ -201,12 +216,15 @@ fun SourceDirectoryScreen(sr: Boolean, settings: SettingsStore, context: Context
             LazyColumn(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                 items(directories, key = { it.id }) { directory ->
                     ListItem(headlineContent = { Text(directory.title) },
-                        supportingContent = { Text(directory.url, maxLines = 1) },
+                        supportingContent = { Text(if (directory.id == "picks")
+                            (if (sr) "Početni izbor izvora" else "Starter publishers")
+                            else (if (sr) "RSS predlozi · dodaj po želji" else "RSS suggestions · choose what to follow")) },
                         modifier = Modifier.clickable {
                             selected = directory
-                            entries = cache.cached(directory.id)
+                            entries = if (directory.id == "picks") SourceDirectory.picks else cache.cached(directory.id)
                             error = ""
-                            if (entries.isEmpty() || System.currentTimeMillis() - cache.updated(directory.id) > 7L * 86400_000L) refresh(directory)
+                            if (directory.id != "picks" && (entries.isEmpty() ||
+                                System.currentTimeMillis() - cache.updated(directory.id) > 7L * 86400_000L)) refresh(directory)
                         })
                 }
                 item { TextButton(onClick = { showCustom = true }) {
@@ -216,7 +234,7 @@ fun SourceDirectoryScreen(sr: Boolean, settings: SettingsStore, context: Context
         } else {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(selected!!.title, color = foreground, modifier = Modifier.weight(1f))
-                TextButton(onClick = { refresh(selected!!) }, enabled = !loading) {
+                TextButton(onClick = { refresh(selected!!) }, enabled = !loading && selected?.id != "picks") {
                     Text(if (sr) "Ažuriraj" else "Update")
                 }
             }
@@ -276,7 +294,7 @@ fun SourceDirectoryScreen(sr: Boolean, settings: SettingsStore, context: Context
             try {
                 require(customName.isNotBlank()) { "Enter a catalogue name" }
                 cache.add(customName.trim(), customURL)
-                directories = SourceDirectory.featured + cache.custom()
+                directories = listOf(picksDirectory) + SourceDirectory.featured + cache.custom()
                 customName = ""; customURL = ""; error = ""; showCustom = false
             } catch (failure: Exception) { error = failure.message ?: "Invalid URL" }
         }) { Text(if (sr) "Dodaj" else "Add") } },
