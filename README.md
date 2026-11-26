@@ -44,6 +44,8 @@ For an unsigned IPA intended for a compatible sideloading setup such as LiveCont
 
 The resulting file is `build/SITO-0.9.4-unsigned.ipa`. It is **not** an App Store or normally signed iOS package.
 
+You can also download unsigned IPAs from [Releases](https://github.com/nikolaign/sito-ios/releases) when a tagged build succeeds. For maintainers, the **iOS unsigned IPA** workflow can be run manually from GitHub Actions; creating a matching `v0.9.4` tag builds and publishes a release automatically.
+
 The optional Cloudflare Worker is in `cloudflare/`. You don't need it to build or read news. Its tests can be run with `node --test cloudflare/worker.test.mjs` on Node.js 22 or later.
 
 ## A note on articles
