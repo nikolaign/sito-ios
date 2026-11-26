@@ -27,7 +27,7 @@ data class DirectoryFeed(val name: String, val feedURL: String, val group: Strin
 
 object SourceDirectory {
     val featured = listOf(
-        FeedDirectory("plenary-news", "World news", "https://raw.githubusercontent.com/plenaryapp/awesome-rss-feeds/master/recommended/with_category/News.opml"),
+        FeedDirectory("plenary-news", "News", "https://raw.githubusercontent.com/plenaryapp/awesome-rss-feeds/master/recommended/with_category/News.opml"),
         FeedDirectory("plenary-tech", "Technology", "https://raw.githubusercontent.com/plenaryapp/awesome-rss-feeds/master/recommended/with_category/Tech.opml"),
         FeedDirectory("plenary-science", "Science", "https://raw.githubusercontent.com/plenaryapp/awesome-rss-feeds/master/recommended/with_category/Science.opml"),
         FeedDirectory("plenary-economy", "Business", "https://raw.githubusercontent.com/plenaryapp/awesome-rss-feeds/master/recommended/with_category/Business%20%26%20Economy.opml"),
