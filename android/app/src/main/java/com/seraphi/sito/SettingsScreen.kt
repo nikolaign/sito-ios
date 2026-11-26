@@ -4,6 +4,7 @@ import android.content.Intent
 import android.net.Uri
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.offset
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
@@ -15,6 +16,8 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import kotlinx.coroutines.delay
+import kotlin.random.Random
 
 @Composable
 internal fun SettingsScreen(
@@ -125,12 +128,26 @@ internal fun SettingsScreen(
             }
         }
         HorizontalDivider(color = muted.copy(alpha = 0.2f))
-        Text(if (sr) "Razvio seraphi" else "Developed by seraphi",
-            color = foreground, fontSize = 13.sp,
-            modifier = Modifier.clickable {
-                context.startActivity(Intent(Intent.ACTION_SENDTO,
-                    Uri.parse("mailto:seraphiheaven@gmail.com")))
-            })
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(if (sr) "Razvio " else "Developed by ", color = muted, fontSize = 13.sp)
+            var fracture by remember { mutableStateOf(false) }
+            LaunchedEffect(Unit) {
+                while (true) {
+                    delay(Random.nextLong(5800, 17000))
+                    fracture = true
+                    delay(Random.nextLong(35, 75))
+                    fracture = false
+                }
+            }
+            Box(Modifier.clickable {
+                runCatching { context.startActivity(Intent(Intent.ACTION_SENDTO,
+                    Uri.parse("mailto:seraphiheaven@gmail.com"))) }
+            }) {
+                Text("seraphi", color = if (fracture) Color(0xFFBB1D2D) else foreground,
+                    fontSize = 13.sp, letterSpacing = if (fracture) .4.sp else 0.sp,
+                    modifier = Modifier.offset(x = if (fracture) 1.dp else 0.dp))
+            }
+        }
     }
 
     if (showAdd) {

@@ -1,5 +1,6 @@
 package com.seraphi.sito
 
+import android.content.Context
 import android.os.Bundle
 import android.os.PowerManager
 import android.net.ConnectivityManager
@@ -58,11 +59,15 @@ private val slate = Color(0xFF9E9BA0)
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        setContent { SitoRoot() }
+        setContent {
+            var launching by remember { mutableStateOf(true) }
+            if (launching) LaunchGlitchScreen { launching = false }
+            else SitoRoot()
+        }
     }
 }
 
-private enum class Screen { FEED, ARCHIVE, SETTINGS, READER }
+private enum class Screen { FEED, ARCHIVE, SETTINGS, READER, GATES }
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
@@ -99,6 +104,7 @@ private fun SitoRoot() {
     var topicsNonce by remember { mutableIntStateOf(0) }
     val visibleTopics = remember(topicsNonce) { settings.visibleTopics() }
     var sourcesDirty by remember { mutableStateOf(false) }
+    val logoTouches = remember { mutableStateListOf<Long>() }
     val scope = rememberCoroutineScope()
     val cloudOptions = remember { CloudOptions(context.applicationContext) }
     fun connectedWifi(): Boolean {
@@ -110,6 +116,15 @@ private fun SitoRoot() {
         screen = Screen.FEED
         reader = null
         if (sourcesDirty) { currentSources = settings.allSources(); sourcesDirty = false; refreshNonce++ }
+    }
+    fun logoTap() {
+        val now = System.currentTimeMillis()
+        logoTouches.removeAll { now - it > 1500L }
+        logoTouches += now
+        if (logoTouches.size >= 6) {
+            logoTouches.clear()
+            screen = Screen.GATES
+        } else if (logoTouches.size == 1) refreshNonce++
     }
 
     LaunchedEffect(refreshNonce) {
@@ -158,7 +173,10 @@ private fun SitoRoot() {
             else lightColorScheme(primary = signature, background = background, surface = parchment),
     ) {
         Column(Modifier.fillMaxSize().background(background)) {
-            if (screen == Screen.READER && reader != null) {
+            if (screen == Screen.GATES) {
+                val witness = remember { feed.toList() + archive.archive() }
+                DreamGateJourneyAndroid(witness, sr) { home() }
+            } else if (screen == Screen.READER && reader != null) {
                 Header(label = reader!!.sourceName, isDark = isDark, onHome = { home() },
                     onArchive = {}, onSettings = {}, showControls = false)
                 ArticleBrowser(reader!!, Modifier.weight(1f))
@@ -190,7 +208,7 @@ private fun SitoRoot() {
                 }
             } else {
                 Header(label = "SITO", isDark = isDark,
-                    onHome = { refreshNonce++ },
+                    onHome = ::logoTap,
                     onArchive = { savedNonce++; screen = Screen.ARCHIVE },
                     onSettings = { screen = Screen.SETTINGS }, showControls = true)
 
