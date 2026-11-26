@@ -10,6 +10,8 @@ import android.webkit.WebViewClient
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
+import androidx.webkit.WebSettingsCompat
+import androidx.webkit.WebViewFeature
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.ExperimentalFoundationApi
@@ -67,7 +69,7 @@ class MainActivity : ComponentActivity() {
     }
 }
 
-private enum class Screen { FEED, ARCHIVE, SETTINGS, READER, GATES }
+private enum class Screen { FEED, ARCHIVE, SETTINGS, READER, PDF, GATES }
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
@@ -94,6 +96,8 @@ private fun SitoRoot() {
     var topic by remember { mutableStateOf(Topic.ALL) }
     var sourceFilter by remember { mutableStateOf<String?>(null) }
     var reader by remember { mutableStateOf<Article?>(null) }
+    var pdfArticle by remember { mutableStateOf<Article?>(null) }
+    val pdfs = remember { PDFStore(context.applicationContext) }
     val feed = remember { mutableStateListOf<Article>() }
     var currentSources by remember { mutableStateOf(settings.allSources()) }
     var loading by remember { mutableStateOf(false) }
@@ -115,6 +119,7 @@ private fun SitoRoot() {
     fun home() {
         screen = Screen.FEED
         reader = null
+        pdfArticle = null
         if (sourcesDirty) { currentSources = settings.allSources(); sourcesDirty = false; refreshNonce++ }
     }
     fun logoTap() {
@@ -154,7 +159,7 @@ private fun SitoRoot() {
                     if (cloudOptions.automatic && (!cloudOptions.wifiOnly || wifi) &&
                         now - cloudOptions.lastBackup >= 24L * 3_600_000L) {
                         scope.launch {
-                            runCatching { CloudArchive(cloudOptions).backup(archive) { } }
+                            runCatching { CloudArchive(cloudOptions).backup(archive, { }, PDFStore(context.applicationContext)) }
                         }
                     }
                 }
@@ -166,7 +171,9 @@ private fun SitoRoot() {
         }
     }
 
-    BackHandler(screen != Screen.FEED) { home() }
+    BackHandler(screen != Screen.FEED) {
+        if (screen == Screen.PDF) screen = Screen.ARCHIVE else home()
+    }
 
     MaterialTheme(
         colorScheme = if (isDark) darkColorScheme(primary = signature, background = background, surface = night)
@@ -176,10 +183,39 @@ private fun SitoRoot() {
             if (screen == Screen.GATES) {
                 val witness = remember { feed.toList() + archive.archive() }
                 DreamGateJourneyAndroid(witness, sr) { home() }
+            } else if (screen == Screen.PDF && pdfArticle != null) {
+                val savedPDF = pdfs.file(pdfArticle!!.id)
+                if (savedPDF != null) PDFReader(savedPDF, sr) { screen = Screen.ARCHIVE }
+                else LaunchedEffect(pdfArticle) { screen = Screen.ARCHIVE }
             } else if (screen == Screen.READER && reader != null) {
                 Header(label = reader!!.sourceName, isDark = isDark, onHome = { home() },
                     onArchive = {}, onSettings = {}, showControls = false)
-                ArticleBrowser(reader!!, Modifier.weight(1f))
+                var webView by remember(reader!!.id) { mutableStateOf<WebView?>(null) }
+                var pageReady by remember(reader!!.id) { mutableStateOf(false) }
+                var saving by remember { mutableStateOf(false) }
+                var readerStatus by remember { mutableStateOf("") }
+                key(reader!!.id) {
+                    ArticleBrowser(reader!!, isDark, Modifier.weight(1f),
+                        onView = { webView = it }, onReady = { pageReady = true })
+                }
+                Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 3.dp),
+                    verticalAlignment = Alignment.CenterVertically) {
+                    TextButton(enabled = pageReady && !saving, onClick = {
+                        val view = webView ?: return@TextButton
+                        saving = true
+                        scope.launch {
+                            try {
+                                saveOriginalPDF(view, reader!!, pdfs)
+                                readerStatus = if (sr) "PDF je sačuvan" else "Full PDF saved"
+                            } catch (failure: Exception) {
+                                readerStatus = failure.localizedMessage ?: "PDF capture failed"
+                            } finally { saving = false }
+                        }
+                    }) { Text(if (sr) "Sačuvaj originalni PDF" else "Save original PDF", fontSize = 12.sp) }
+                    Spacer(Modifier.weight(1f))
+                    Text(if (saving) "…" else readerStatus, color = muted, fontSize = 11.sp,
+                        maxLines = 1)
+                }
             } else if (screen == Screen.SETTINGS) {
                 Header(label = if (sr) "Podešavanja" else "Settings", isDark = isDark,
                     onHome = { home() }, onArchive = {}, onSettings = {}, showControls = false)
@@ -201,6 +237,7 @@ private fun SitoRoot() {
                 key(savedNonce) {
                     ArchiveScreen(archive, sr, foreground, muted,
                         onOpen = { reader = it; screen = Screen.READER },
+                        onPDF = { pdfArticle = it; screen = Screen.PDF }, pdfs = pdfs,
                         onToggle = { article ->
                             archive.bookmark(article.id, !article.bookmark)
                             savedNonce++
@@ -361,21 +398,34 @@ private fun StoryCardAndroid(article: Article, compact: Boolean, dark: Boolean, 
 }
 
 @Composable
-private fun ArticleBrowser(article: Article, modifier: Modifier = Modifier) {
+private fun ArticleBrowser(article: Article, dark: Boolean, modifier: Modifier = Modifier,
+                           onView: (WebView) -> Unit, onReady: () -> Unit) {
     AndroidView(modifier = modifier.fillMaxWidth(), factory = { context ->
         WebView(context).apply {
             settings.javaScriptEnabled = true
             settings.domStorageEnabled = true
             settings.textZoom = 110
-            webViewClient = WebViewClient()
+            if (WebViewFeature.isFeatureSupported(WebViewFeature.ALGORITHMIC_DARKENING)) {
+                WebSettingsCompat.setAlgorithmicDarkeningAllowed(settings, dark)
+            }
+            setBackgroundColor(if (dark) android.graphics.Color.BLACK else android.graphics.Color.WHITE)
+            webViewClient = object : WebViewClient() {
+                override fun onPageFinished(view: WebView?, url: String?) { onReady() }
+            }
+            onView(this)
             loadUrl(article.url)
         }
-    }, update = { view -> if (view.url != article.url) view.loadUrl(article.url) })
+    }, update = { view ->
+        if (WebViewFeature.isFeatureSupported(WebViewFeature.ALGORITHMIC_DARKENING)) {
+            WebSettingsCompat.setAlgorithmicDarkeningAllowed(view.settings, dark)
+        }
+    })
 }
 
 @Composable
 private fun ArchiveScreen(store: LocalStore, sr: Boolean, foreground: Color, muted: Color,
-                          onOpen: (Article) -> Unit, onToggle: (Article) -> Unit) {
+                          pdfs: PDFStore, onOpen: (Article) -> Unit,
+                          onPDF: (Article) -> Unit, onToggle: (Article) -> Unit) {
     var query by remember { mutableStateOf("") }
     var bookmarksOnly by remember { mutableStateOf(false) }
     val stories = remember(query, bookmarksOnly) { store.archive(query, bookmarksOnly) }
@@ -396,6 +446,8 @@ private fun ArchiveScreen(store: LocalStore, sr: Boolean, foreground: Color, mut
                         Text(story.sourceName, color = signature, fontSize = 12.sp)
                         Text(story.title, color = foreground, fontFamily = FontFamily.Serif, fontSize = 20.sp)
                     }
+                    if (pdfs.contains(story.id)) Text("PDF", color = signature, fontSize = 12.sp,
+                        modifier = Modifier.clickable { onPDF(story) }.padding(10.dp))
                     Text(if (story.bookmark) "★" else "☆", color = signature, fontSize = 24.sp,
                         modifier = Modifier.clickable { onToggle(story) }.padding(8.dp))
                 }

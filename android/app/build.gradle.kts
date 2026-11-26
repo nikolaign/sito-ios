@@ -46,6 +46,7 @@ dependencies {
     implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.9.2")
     implementation("org.jsoup:jsoup:1.21.2")
     implementation("io.coil-kt:coil-compose:2.7.0")
+    implementation("androidx.webkit:webkit:1.13.0")
     testImplementation("junit:junit:4.13.2")
     // Android's org.json classes are stubs under local JVM tests.
     testImplementation("org.json:json:20240303")

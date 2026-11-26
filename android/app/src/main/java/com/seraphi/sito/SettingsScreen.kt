@@ -4,7 +4,6 @@ import android.content.Intent
 import android.net.Uri
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.offset
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
@@ -38,8 +37,13 @@ internal fun SettingsScreen(
     var showTopics by remember { mutableStateOf(false) }
     var showCatalogue by remember { mutableStateOf(false) }
     var showArchiveTools by remember { mutableStateOf(false) }
+    var showCloud by remember { mutableStateOf(false) }
     val context = LocalContext.current
 
+    if (showCloud) {
+        CloudVaultScreen(context, archive, sr, foreground, muted, onBack = { showCloud = false })
+        return
+    }
     if (showArchiveTools) {
         ArchiveToolsScreen(context, archive, sr, foreground, muted,
             onBack = { showArchiveTools = false })
@@ -125,6 +129,9 @@ internal fun SettingsScreen(
             }
             TextButton(onClick = { showArchiveTools = true }) {
                 Text(if (sr) "Arhiva, dopuna teksta i backup" else "Archive, complete texts & backup")
+            }
+            TextButton(onClick = { showCloud = true }) {
+                Text(if (sr) "Privatni Cloudflare backup" else "Private Cloudflare backup")
             }
         }
         HorizontalDivider(color = muted.copy(alpha = 0.2f))

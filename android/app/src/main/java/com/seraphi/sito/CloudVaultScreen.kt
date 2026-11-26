@@ -26,6 +26,8 @@ fun CloudVaultScreen(context: Context, store: LocalStore, sr: Boolean,
     var recoveryShown by remember { mutableStateOf<String?>(null) }
     var automatic by remember { mutableStateOf(options.automatic) }
     var wifiOnly by remember { mutableStateOf(options.wifiOnly) }
+    var includePDFs by remember { mutableStateOf(options.includePDFs) }
+    val pdfStore = remember { PDFStore(context.applicationContext) }
     var busy by remember { mutableStateOf(false) }
     var status by remember { mutableStateOf("") }
 
@@ -110,6 +112,12 @@ fun CloudVaultScreen(context: Context, store: LocalStore, sr: Boolean,
                 modifier = Modifier.weight(1f))
             Switch(checked = wifiOnly, onCheckedChange = { wifiOnly = it; options.wifiOnly = it })
         }
+        Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
+            Text(if (sr) "Uključi i sačuvane PDF-ove (više prostora)"
+                else "Include saved PDFs (more storage)", color = foreground,
+                modifier = Modifier.weight(1f))
+            Switch(checked = includePDFs, onCheckedChange = { includePDFs = it; options.includePDFs = it })
+        }
         if (options.lastBackup > 0) Text(
             (if (sr) "Poslednji backup " else "Last backup ") +
                 java.text.DateFormat.getDateTimeInstance().format(java.util.Date(options.lastBackup)), color = muted)
@@ -122,7 +130,7 @@ fun CloudVaultScreen(context: Context, store: LocalStore, sr: Boolean,
         }
         if (busy) LinearProgressIndicator(Modifier.fillMaxWidth())
         Button(enabled = !busy, onClick = { run { progress ->
-            val saved = cloud.backup(store, progress)
+            val saved = cloud.backup(store, progress, pdfStore)
             "Backup saved · ${saved.records} records · ${saved.complete} full texts · ${saved.pdfs} PDFs"
         } }) { Text(if (sr) "Napravi backup" else "Back Up Now") }
         OutlinedButton(enabled = !busy, onClick = { run { progress ->
@@ -130,11 +138,11 @@ fun CloudVaultScreen(context: Context, store: LocalStore, sr: Boolean,
             "Cloud verified · ${verified.records} records · ${verified.complete} full texts · ${verified.pdfs} PDFs"
         } }) { Text(if (sr) "Proveri cloud arhivu" else "Verify Cloud Archive") }
         OutlinedButton(enabled = !busy, onClick = { run { progress ->
-            val restored = cloud.restore(store, progress = progress)
+            val restored = cloud.restore(store, progress = progress, pdfStore = pdfStore)
             "Restored $restored new articles · bookmarks merged"
         } }) { Text(if (sr) "Vrati iz clouda" else "Restore from Cloud") }
         TextButton(enabled = !busy, onClick = { run { progress ->
-            val restored = cloud.restore(store, previous = true, progress = progress)
+            val restored = cloud.restore(store, previous = true, progress = progress, pdfStore = pdfStore)
             "Restored $restored new articles from previous backup"
         } }) { Text(if (sr) "Vrati prethodni cloud backup" else "Restore previous cloud backup") }
         if (status.isNotBlank()) Text(status, color = Color(0xFFCB202B))

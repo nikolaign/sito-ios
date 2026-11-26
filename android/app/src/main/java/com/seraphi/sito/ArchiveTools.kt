@@ -110,6 +110,41 @@ fun ArchiveToolsScreen(context: Context, store: LocalStore, sr: Boolean, foregro
     var status by remember { mutableStateOf("") }
     var days by remember { mutableIntStateOf(365) }
     var confirmDelete by remember { mutableStateOf(false) }
+    val pdfs = remember { PDFStore(context.applicationContext) }
+    val cloud = remember { CloudOptions(context.applicationContext) }
+    val encryptedExport = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/octet-stream")) { uri: Uri? ->
+        if (uri == null) return@rememberLauncherForActivityResult
+        busy = true
+        scope.launch {
+            try {
+                val key = android.util.Base64.decode(requireNotNull(cloud.secrets.read("recovery-key")), android.util.Base64.DEFAULT)
+                withContext(Dispatchers.IO) {
+                    requireNotNull(context.contentResolver.openOutputStream(uri)).use { stream ->
+                        PortableVault.export(store, pdfs, stream, key, withPDFs = true) { status = it }
+                    }
+                }
+                status = if (sr) "Šifrovani backup sačuvan" else "Encrypted backup saved"
+            } catch (failure: Exception) { status = failure.localizedMessage ?: "Export failed" }
+            finally { busy = false }
+        }
+    }
+    val encryptedImport = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri: Uri? ->
+        if (uri == null) return@rememberLauncherForActivityResult
+        busy = true
+        scope.launch {
+            try {
+                val key = android.util.Base64.decode(requireNotNull(cloud.secrets.read("recovery-key")), android.util.Base64.DEFAULT)
+                val count = withContext(Dispatchers.IO) {
+                    requireNotNull(context.contentResolver.openInputStream(uri)).use { stream ->
+                        PortableVault.import(store, pdfs, stream, key) { status = it }
+                    }
+                }
+                revision++
+                status = if (sr) "Vraćeno $count novih vesti" else "Restored $count new articles"
+            } catch (failure: Exception) { status = failure.localizedMessage ?: "Import failed" }
+            finally { busy = false }
+        }
+    }
     val save = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/json")) { uri: Uri? ->
         if (uri == null) return@rememberLauncherForActivityResult
         busy = true
@@ -147,6 +182,8 @@ fun ArchiveToolsScreen(context: Context, store: LocalStore, sr: Boolean, foregro
         Text(if (sr) "Arhiva i lokalni backup" else "Archive & local backup", color = foreground,
             style = MaterialTheme.typography.headlineMedium)
         Text(if (sr) "$articles vesti · $complete kompletnih tekstova" else "$articles articles · $complete complete texts", color = muted)
+        Text(if (sr) "PDF datoteke: ${pdfs.totalBytes() / 1024} KB"
+            else "Saved PDFs: ${pdfs.totalBytes() / 1024} KB", color = muted)
         Text(if (sr) "Čuvaju se naslov, originalni link, datum, izvor, kategorija i dostupan tekst bez slika."
             else "Titles, source URLs, dates, categories and available article text are stored without images.", color = muted)
         if (busy) LinearProgressIndicator(Modifier.fillMaxWidth())
@@ -166,6 +203,20 @@ fun ArchiveToolsScreen(context: Context, store: LocalStore, sr: Boolean, foregro
         }) { Text(if (sr) "Dopuni sledećih 40 vesti" else "Complete the next 40 articles") }
         HorizontalDivider()
         Text(if (sr) "Lokalni backup" else "Local backup", color = foreground)
+        OutlinedButton(enabled = !busy, onClick = {
+            if (cloud.secrets.read("recovery-key") == null)
+                status = if (sr) "Prvo sačuvaj ključ za oporavak u Cloud podešavanjima"
+                    else "First generate and safely store your recovery key in Cloud settings"
+            else encryptedExport.launch("SITO-private.sitobackup")
+        }) { Text(if (sr) "Sačuvaj šifrovani .sitobackup" else "Export encrypted .sitobackup") }
+        OutlinedButton(enabled = !busy, onClick = {
+            if (cloud.secrets.read("recovery-key") == null)
+                status = if (sr) "Uvezi ključ za oporavak u Cloud podešavanjima"
+                    else "Import your recovery key in Cloud settings first"
+            else encryptedImport.launch(arrayOf("application/octet-stream", "application/x-binary", "*/*"))
+        }) { Text(if (sr) "Uvezi šifrovani .sitobackup" else "Import encrypted .sitobackup") }
+        Text(if (sr) "Kompatibilno sa iOS .sitobackup formatom, uključujući PDF-ove."
+            else "Compatible with iOS .sitobackup files, including PDFs.", color = muted)
         OutlinedButton(enabled = !busy, onClick = { save.launch("SITO-archive.json") }) {
             Text(if (sr) "Sačuvaj JSON arhivu" else "Export archive JSON")
         }

@@ -128,6 +128,9 @@ class CloudOptions(private val context: Context) {
     var wifiOnly: Boolean
         get() = preferences.getBoolean("wifiOnly", true)
         set(value) { preferences.edit().putBoolean("wifiOnly", value).apply() }
+    var includePDFs: Boolean
+        get() = preferences.getBoolean("includePDFs", false)
+        set(value) { preferences.edit().putBoolean("includePDFs", value).apply() }
     var lastBackup: Long
         get() = preferences.getLong("lastBackup", 0L)
         set(value) { preferences.edit().putLong("lastBackup", value).apply() }
@@ -320,7 +323,8 @@ class CloudArchive(private val options: CloudOptions) {
         )
     }
 
-    suspend fun backup(store: LocalStore, progress: (String) -> Unit): Summary = withContext(Dispatchers.IO) {
+    suspend fun backup(store: LocalStore, progress: (String) -> Unit,
+                       pdfStore: PDFStore? = null): Summary = withContext(Dispatchers.IO) {
         val (api, key) = options.credentials()
         val prior = api.getManifest()?.let { manifest(it, key) }
         val cloud = prior?.let { readChunks(api, key, it, progress) }.orEmpty()
@@ -367,6 +371,23 @@ class CloudArchive(private val options: CloudOptions) {
             }
             flush()
         }
+        val pdfMap = linkedMapOf<String, JSONObject>()
+        prior?.pdfs?.let { existing -> (0 until existing.length()).forEach { index ->
+            val record = existing.getJSONObject(index)
+            pdfMap[record.getString("id")] = record
+        } }
+        if (options.includePDFs && pdfStore != null) {
+            for (article in union.values) {
+                val bytes = pdfStore.read(article.id) ?: continue
+                val fingerprint = VaultCipher.sha256(bytes)
+                val fileName = "${VaultCipher.sha256(article.id.toByteArray())}-$fingerprint.pdf"
+                if (pdfMap[article.id]?.optString("filename") == fileName) continue
+                progress("Uploading original PDF · ${pdfMap.size + 1}")
+                val objectKey = api.putObject(VaultCipher.encrypt(bytes, key))
+                pdfMap[article.id] = JSONObject().put("id", article.id)
+                    .put("filename", fileName).put("object", objectKey)
+            }
+        }
         val manifestJson = JSONObject().apply {
             put("version", 1)
             put("createdAt", (System.currentTimeMillis() - 978307200000L) / 1000.0)
@@ -375,14 +396,14 @@ class CloudArchive(private val options: CloudOptions) {
                     .put("object", it.objectKey).put("count", it.count))
             } })
             put("bookmarks", JSONArray().also { list -> marks.values.forEach { list.put(VaultJSON.encode(it)) } })
-            put("pdfs", prior?.pdfs ?: JSONArray())
+            put("pdfs", JSONArray().also { list -> pdfMap.values.forEach { list.put(it) } })
         }
         progress("Writing authenticated manifest…")
         val sealed = VaultCipher.encrypt(manifestJson.toString().toByteArray(), key)
         api.putManifest(sealed)
         options.uploadedDigest = VaultCipher.sha256(sealed)
         options.lastBackup = System.currentTimeMillis()
-        Summary(union.size, union.values.count { it.hasFullText() }, prior?.pdfs?.length() ?: 0)
+        Summary(union.size, union.values.count { it.hasFullText() }, pdfMap.size)
     }
 
     suspend fun verify(progress: (String) -> Unit): Summary = withContext(Dispatchers.IO) {
@@ -403,7 +424,7 @@ class CloudArchive(private val options: CloudOptions) {
     }
 
     suspend fun restore(store: LocalStore, previous: Boolean = false,
-                        progress: (String) -> Unit): Int = withContext(Dispatchers.IO) {
+                        progress: (String) -> Unit, pdfStore: PDFStore? = null): Int = withContext(Dispatchers.IO) {
         val (api, key) = options.credentials()
         val ciphertext = api.getManifest(previous) ?: error("This cloud backup doesn't exist")
         val content = manifest(ciphertext, key)
@@ -412,8 +433,23 @@ class CloudArchive(private val options: CloudOptions) {
         val merged = articles.map { item ->
             marks[item.id]?.let { richer(item.copy(bookmark = true), it) } ?: item
         } + content.bookmarks.filterNot { marks -> articles.any { it.id == marks.id } }
+        val pdfStages = mutableListOf<Pair<String, ByteArray>>()
+        if (pdfStore != null) {
+            val validIDs = merged.map { it.id }.toHashSet()
+            for (index in 0 until content.pdfs.length()) {
+                val pdf = content.pdfs.getJSONObject(index)
+                val id = pdf.getString("id")
+                if (id !in validIDs) continue
+                progress("Downloading PDF · ${index + 1}/${content.pdfs.length()}")
+                val bytes = VaultCipher.decrypt(api.getObject(pdf.getString("object")), key)
+                require(bytes.size >= 5 && bytes.size < 35_000_000 &&
+                    bytes.copyOfRange(0, 5).contentEquals("%PDF-".toByteArray())) { "Invalid cloud PDF" }
+                pdfStages += id to bytes
+            }
+        }
         val before = store.count()
         store.merge(merged)
+        pdfStages.forEach { (id, bytes) -> pdfStore?.save(id, bytes) }
         store.count() - before
     }
 }
