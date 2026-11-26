@@ -150,7 +150,7 @@ object NewsEngine {
             require(connection.responseCode in 200..299) { "HTTP ${connection.responseCode}" }
             require(connection.url.protocol == "https") { "Non-HTTPS redirect" }
             val body = connection.inputStream.use { stream ->
-                val bytes = stream.readNBytes(3_000_001)
+                val bytes = stream.readAtMost(3_000_001)
                 require(bytes.size <= 3_000_000) { "Feed is too large" }
                 String(bytes, Charsets.UTF_8)
             }

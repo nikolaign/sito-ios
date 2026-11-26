@@ -177,7 +177,7 @@ fun ArchiveToolsScreen(context: Context, store: LocalStore, sr: Boolean, foregro
             try {
                 val added = withContext(Dispatchers.IO) {
                     val bytes = requireNotNull(context.contentResolver.openInputStream(uri)) { "Cannot read file" }
-                        .use { it.readNBytes(100_000_001) }
+                        .use { it.readAtMost(100_000_001) }
                     ArchiveTools.importJSON(store, bytes)
                 }
                 revision++

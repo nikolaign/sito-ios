@@ -27,11 +27,11 @@ data class DirectoryFeed(val name: String, val feedURL: String, val group: Strin
 
 object SourceDirectory {
     val featured = listOf(
-        FeedDirectory("plenary-news", "World news", "https://raw.githubusercontent.com/spians/awesome-RSS-feeds/master/recommended/with_category/News.opml"),
-        FeedDirectory("plenary-tech", "Technology", "https://raw.githubusercontent.com/spians/awesome-RSS-feeds/master/recommended/with_category/Tech.opml"),
-        FeedDirectory("plenary-science", "Science", "https://raw.githubusercontent.com/spians/awesome-RSS-feeds/master/recommended/with_category/Science.opml"),
-        FeedDirectory("plenary-economy", "Business", "https://raw.githubusercontent.com/spians/awesome-RSS-feeds/master/recommended/with_category/Business%20%26%20Economy.opml"),
-        FeedDirectory("plenary-us", "United States", "https://raw.githubusercontent.com/spians/awesome-RSS-feeds/master/countries/with_category/United%20States.opml"),
+        FeedDirectory("plenary-news", "World news", "https://raw.githubusercontent.com/plenaryapp/awesome-rss-feeds/master/recommended/with_category/News.opml"),
+        FeedDirectory("plenary-tech", "Technology", "https://raw.githubusercontent.com/plenaryapp/awesome-rss-feeds/master/recommended/with_category/Tech.opml"),
+        FeedDirectory("plenary-science", "Science", "https://raw.githubusercontent.com/plenaryapp/awesome-rss-feeds/master/recommended/with_category/Science.opml"),
+        FeedDirectory("plenary-economy", "Business", "https://raw.githubusercontent.com/plenaryapp/awesome-rss-feeds/master/recommended/with_category/Business%20%26%20Economy.opml"),
+        FeedDirectory("plenary-us", "United States", "https://raw.githubusercontent.com/plenaryapp/awesome-rss-feeds/master/countries/with_category/United%20States.opml"),
         FeedDirectory("independent-global", "Global briefing", "https://raw.githubusercontent.com/ajdelaguila/opml-news-feeds/main/global-briefing.opml.xml"),
         FeedDirectory("independent-tech", "Tech & engineering", "https://raw.githubusercontent.com/ajdelaguila/opml-news-feeds/main/tech-en.opml.xml"),
     )
@@ -65,7 +65,7 @@ object SourceDirectory {
             require(connection.responseCode in 200..299 && connection.url.protocol == "https") {
                 "Catalogue HTTP ${connection.responseCode}"
             }
-            val bytes = connection.inputStream.use { it.readNBytes(1_000_001) }
+            val bytes = connection.inputStream.use { it.readAtMost(1_000_001) }
             require(bytes.size <= 1_000_000) { "Catalogue exceeds 1 MB" }
             parse(String(bytes, Charsets.UTF_8))
         } finally { connection.disconnect() }
@@ -163,6 +163,7 @@ fun SourceDirectoryScreen(sr: Boolean, settings: SettingsStore, context: Context
     var showCustom by remember { mutableStateOf(false) }
     var customName by remember { mutableStateOf("") }
     var customURL by remember { mutableStateOf("") }
+    var installedFeeds by remember { mutableStateOf<Set<String>>(settings.allSources().map { it.feed }.toSet()) }
     val scope = rememberCoroutineScope()
 
     fun refresh(directory: FeedDirectory) {
@@ -171,7 +172,7 @@ fun SourceDirectoryScreen(sr: Boolean, settings: SettingsStore, context: Context
         scope.launch {
             try {
                 val updated = SourceDirectory.load(directory.url)
-                cache.save(directory.id, updated)
+                withContext(Dispatchers.IO) { cache.save(directory.id, updated) }
                 if (selected?.id == directory.id) entries = updated
             } catch (failure: Exception) {
                 error = failure.localizedMessage ?: "Catalogue unavailable"
@@ -224,7 +225,7 @@ fun SourceDirectoryScreen(sr: Boolean, settings: SettingsStore, context: Context
             Text("${filtered.size} feeds", color = muted)
             LazyColumn(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 items(filtered, key = { it.feedURL }) { feed ->
-                    val installed = settings.allSources().any { it.feed == feed.feedURL }
+                    val installed = feed.feedURL in installedFeeds
                     Row(Modifier.fillMaxWidth().padding(vertical = 7.dp), verticalAlignment = Alignment.CenterVertically) {
                         Column(Modifier.weight(1f)) {
                             Text(feed.name, color = foreground)
@@ -232,6 +233,7 @@ fun SourceDirectoryScreen(sr: Boolean, settings: SettingsStore, context: Context
                         }
                         TextButton(enabled = !installed, onClick = {
                             settings.addSource(feed.name, feed.feedURL, feed.region)
+                            installedFeeds = installedFeeds + feed.feedURL
                             onAdded()
                         }) { Text(if (installed) "✓" else "+") }
                     }

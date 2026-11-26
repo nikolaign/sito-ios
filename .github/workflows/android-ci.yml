@@ -39,6 +39,10 @@ jobs:
     needs: build
     runs-on: ubuntu-latest
     timeout-minutes: 40
+    strategy:
+      fail-fast: false
+      matrix:
+        api-level: [26, 35]
     steps:
       - uses: actions/checkout@v7
         with:
@@ -54,7 +58,7 @@ jobs:
       - name: Android emulator smoke test
         uses: reactivecircus/android-emulator-runner@v2
         with:
-          api-level: 35
+          api-level: ${{ matrix.api-level }}
           arch: x86_64
           target: google_apis
           disable-animations: true

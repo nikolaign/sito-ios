@@ -131,19 +131,23 @@ fun CloudVaultScreen(context: Context, store: LocalStore, sr: Boolean,
         if (busy) LinearProgressIndicator(Modifier.fillMaxWidth())
         Button(enabled = !busy, onClick = { run { progress ->
             val saved = cloud.backup(store, progress, pdfStore)
-            "Backup saved · ${saved.records} records · ${saved.complete} full texts · ${saved.pdfs} PDFs"
+            if (sr) "Backup sačuvan · ${saved.records} vesti · ${saved.complete} kompletnih tekstova · ${saved.pdfs} PDF-ova"
+            else "Backup saved · ${saved.records} records · ${saved.complete} full texts · ${saved.pdfs} PDFs"
         } }) { Text(if (sr) "Napravi backup" else "Back Up Now") }
         OutlinedButton(enabled = !busy, onClick = { run { progress ->
             val verified = cloud.verify(progress)
-            "Cloud verified · ${verified.records} records · ${verified.complete} full texts · ${verified.pdfs} PDFs"
+            if (sr) "Cloud proveren · ${verified.records} vesti · ${verified.complete} kompletnih tekstova · ${verified.pdfs} PDF-ova"
+            else "Cloud verified · ${verified.records} records · ${verified.complete} full texts · ${verified.pdfs} PDFs"
         } }) { Text(if (sr) "Proveri cloud arhivu" else "Verify Cloud Archive") }
         OutlinedButton(enabled = !busy, onClick = { run { progress ->
             val restored = cloud.restore(store, progress = progress, pdfStore = pdfStore)
-            "Restored $restored new articles · bookmarks merged"
+            if (sr) "Vraćeno $restored novih vesti · sačuvane oznake spojene"
+            else "Restored $restored new articles · bookmarks merged"
         } }) { Text(if (sr) "Vrati iz clouda" else "Restore from Cloud") }
         TextButton(enabled = !busy, onClick = { run { progress ->
             val restored = cloud.restore(store, previous = true, progress = progress, pdfStore = pdfStore)
-            "Restored $restored new articles from previous backup"
+            if (sr) "Vraćeno $restored novih vesti iz prethodnog backupa"
+            else "Restored $restored new articles from previous backup"
         } }) { Text(if (sr) "Vrati prethodni cloud backup" else "Restore previous cloud backup") }
         if (status.isNotBlank()) Text(status, color = Color(0xFFCB202B))
         Text(if (sr) "Nikada ne šalji token ili ključ za oporavak u issue ili javni log."

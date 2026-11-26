@@ -202,7 +202,7 @@ class VaultAPI(private val endpoint: String, private val token: String) {
             if (status in 300..399) error("Unexpected cloud redirect")
             val data = if (method == "HEAD") ByteArray(0) else
                 (if (status in 200..299) connection.inputStream else connection.errorStream)
-                    ?.use { it.readNBytes(40_000_001) } ?: ByteArray(0)
+                    ?.use { it.readAtMost(40_000_001) } ?: ByteArray(0)
             require(data.size <= 40_000_000) { "Cloud response exceeds the limit" }
             return Response(status, data, connection.getHeaderField("x-sito-parts")?.toIntOrNull() ?: 1)
         } finally { connection.disconnect() }

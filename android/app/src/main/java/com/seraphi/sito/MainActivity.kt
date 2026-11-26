@@ -74,7 +74,7 @@ class MainActivity : ComponentActivity() {
 
 private enum class Screen { FEED, ARCHIVE, SETTINGS, READER, PDF, GATES }
 
-@OptIn(ExperimentalFoundationApi::class)
+@OptIn(ExperimentalFoundationApi::class, ExperimentalMaterial3Api::class)
 @Composable
 private fun SitoRoot() {
     val context = LocalContext.current
@@ -203,7 +203,7 @@ private fun SitoRoot() {
                             try {
                                 withContext(Dispatchers.IO) {
                                     val data = requireNotNull(context.contentResolver.openInputStream(uri))
-                                        .use { it.readNBytes(35_000_001) }
+                                        .use { it.readAtMost(35_000_001) }
                                     pdfs.save(selected.id, data)
                                 }
                                 readerStatus = if (sr) "PDF dodat u arhivu" else "PDF added to archive"
