@@ -13,6 +13,12 @@ import java.time.OffsetDateTime
 import java.util.Date
 import java.util.Locale
 import kotlin.math.min
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.sync.Semaphore
+import kotlinx.coroutines.sync.withPermit
 
 data class Source(
     val id: String,
@@ -58,6 +64,7 @@ object Sources {
         Source("nova", "Nova.rs", "https://nova.rs/feed/", Region.SERBIA),
         Source("krik", "KRIK", "https://www.krik.rs/feed/", Region.SERBIA),
         Source("cins", "CINS", "https://www.cins.rs/feed/", Region.SERBIA),
+        Source("raspad", "Raspad Sistema", "https://raspadsistema.com/?status=potvrdjeno", Region.SERBIA),
         Source("bbc", "BBC World", "https://feeds.bbci.co.uk/news/world/rss.xml", Region.WORLD),
         Source("dw", "DW English", "https://rss.dw.com/xml/rss-en-all", Region.WORLD),
         Source("guardian", "The Guardian", "https://www.theguardian.com/world/rss", Region.WORLD),
@@ -93,6 +100,25 @@ object TopicRules {
 }
 
 object NewsEngine {
+    data class FetchReport(val items: List<Article>, val unavailable: List<String>)
+
+    suspend fun fetchAll(sources: List<Source>): FetchReport = coroutineScope {
+        // Slow sources must never block scrolling or source selection. A bounded
+        // number of concurrent requests avoids flooding phones and publishers.
+        val slots = Semaphore(4)
+        val results = sources.map { source ->
+            async(Dispatchers.IO) {
+                slots.withPermit {
+                    runCatching { fetch(source) }.fold(
+                        onSuccess = { it to null },
+                        onFailure = { emptyList<Article>() to source.name },
+                    )
+                }
+            }
+        }.awaitAll()
+        FetchReport(results.flatMap { it.first }, results.mapNotNull { it.second })
+    }
+
     fun fetch(source: Source): List<Article> {
         val url = URL(source.feed)
         require(url.protocol == "https")
@@ -106,8 +132,14 @@ object NewsEngine {
         return try {
             require(connection.responseCode in 200..299) { "HTTP ${connection.responseCode}" }
             require(connection.url.protocol == "https") { "Non-HTTPS redirect" }
-            val body = connection.inputStream.bufferedReader().use { it.readText() }
-            if (body.trimStart().startsWith("{")) parseJson(body, source) else parseXml(body, source)
+            val body = connection.inputStream.use { stream ->
+                val bytes = stream.readNBytes(3_000_001)
+                require(bytes.size <= 3_000_000) { "Feed is too large" }
+                String(bytes, Charsets.UTF_8)
+            }
+            if (source.id == "raspad") parseRaspad(body, source)
+            else if (body.trimStart().startsWith("{")) parseJson(body, source)
+            else parseXml(body, source)
         } finally {
             connection.disconnect()
         }
@@ -163,16 +195,75 @@ object NewsEngine {
         }
     }
 
+    internal fun parseRaspad(html: String, source: Source): List<Article> {
+        // This is not an RSS source. Only explicitly confirmed / official
+        // entries from the publisher's public listing are included.
+        val months = listOf("januar", "februar", "mart", "april", "maj", "jun",
+            "jul", "avgust", "septembar", "oktobar", "novembar", "decembar")
+        val document = Jsoup.parse(html, "https://raspadsistema.com")
+        var day = 0
+        var month = 0
+        val zone = java.time.ZoneId.of("Europe/Belgrade")
+        val now = java.time.ZonedDateTime.now(zone)
+        return document.select("li.dayhdr, li.item").mapNotNull { node ->
+            if (node.hasClass("dayhdr")) {
+                val match = Regex("(\\d{1,2})\\.\\s*([\\p{L}]+)")
+                    .find(node.text().lowercase(Locale.ROOT))
+                day = match?.groupValues?.getOrNull(1)?.toIntOrNull() ?: 0
+                month = months.indexOf(match?.groupValues?.getOrNull(2)) + 1
+                return@mapNotNull null
+            }
+            val id = node.id().takeIf { it.matches(Regex("c-[a-zA-Z0-9]+")) }
+                ?: return@mapNotNull null
+            val status = node.selectFirst("span.st.potvrdjeno, span.st.zvanicno")
+                ?: return@mapNotNull null
+            val title = node.selectFirst("div.title")?.text()?.trim().orEmpty()
+            if (title.isBlank()) return@mapNotNull null
+            val summary = node.selectFirst("div.text")?.text().orEmpty()
+            val link = node.selectFirst("div.srcline a[href]")?.absUrl("href").orEmpty()
+            val destination = normalizeHttpURL(link)
+                ?: "https://raspadsistema.com/?status=potvrdjeno#$id"
+            val time = node.selectFirst("div.time")?.text()?.trim().orEmpty().split(":")
+            val published = runCatching {
+                val hour = time.getOrNull(0)?.toIntOrNull() ?: 12
+                val minute = time.getOrNull(1)?.toIntOrNull() ?: 0
+                var date = now.withMonth(month).withDayOfMonth(day)
+                    .withHour(hour).withMinute(minute).withSecond(0).withNano(0)
+                if (date.isAfter(now.plusDays(2))) date = date.minusYears(1)
+                date.toInstant().toEpochMilli()
+            }.getOrDefault(System.currentTimeMillis())
+            Article(id = "raspad|$id", sourceID = source.id,
+                sourceName = source.name, region = source.region,
+                title = title, summary = summary, url = destination,
+                image = null, published = published,
+                categories = listOf(if (status.hasClass("zvanicno")) "zvanično" else "potvrđeno"))
+        }
+    }
+
     fun mixed(items: List<Article>): List<Article> {
-        val sources = items.groupBy { it.sourceID }.mapValues { (_, articles) -> articles.sortedByDescending { it.published }.toMutableList() }
-        val order = sources.keys.sorted()
+        val sourceCount = items.map { it.sourceID }.distinct().size.coerceAtLeast(1)
+        val cap = if (sourceCount == 1) 700 else maxOf(20, 180 / sourceCount)
+        val counts = mutableMapOf<String, Int>()
+        val windows = sortedMapOf<Long, MutableList<Article>>(reverseOrder())
+        for (item in items.sortedByDescending { it.published }) {
+            val used = counts[item.sourceID] ?: 0
+            if (used >= cap) continue
+            counts[item.sourceID] = used + 1
+            windows.getOrPut(item.published / 21_600_000L) { mutableListOf() }.add(item)
+        }
         val output = mutableListOf<Article>()
-        var index = 0
-        while (output.size < items.size && index < items.size) {
-            val round = order.mapNotNull { id -> sources[id]?.getOrNull(index) }
-                .sortedByDescending { it.published }
-            output += round
-            index++
+        for (window in windows.values) {
+            val queues = window.groupBy { it.sourceID }
+            val order = queues.keys.sortedByDescending { queues[it]?.firstOrNull()?.published ?: 0 }
+            val positions = mutableMapOf<String, Int>()
+            while (positions.values.sum() < window.size) {
+                for (id in order) {
+                    val index = positions[id] ?: 0
+                    val article = queues[id]?.getOrNull(index) ?: continue
+                    output.add(article)
+                    positions[id] = index + 1
+                }
+            }
         }
         return output
     }

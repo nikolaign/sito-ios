@@ -1,5 +1,7 @@
 package com.seraphi.sito
 
+import android.content.Intent
+import android.net.Uri
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
@@ -8,6 +10,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -21,6 +24,7 @@ internal fun SettingsScreen(
     onLanguage: (String) -> Unit, onTheme: (String) -> Unit,
     onCompact: (Boolean) -> Unit, onPaged: (Boolean) -> Unit, onAdvanced: (Boolean) -> Unit,
     onSourcesChanged: () -> Unit,
+    onTopicsChanged: () -> Unit,
 ) {
     var showSources by remember { mutableStateOf(false) }
     var showAdd by remember { mutableStateOf(false) }
@@ -28,6 +32,15 @@ internal fun SettingsScreen(
     var newURL by remember { mutableStateOf("") }
     var newRegion by remember { mutableStateOf(Region.WORLD) }
     var error by remember { mutableStateOf("") }
+    var showTopics by remember { mutableStateOf(false) }
+    var showCatalogue by remember { mutableStateOf(false) }
+    val context = LocalContext.current
+
+    if (showCatalogue) {
+        SourceDirectoryScreen(sr, settings, context, foreground, muted,
+            onBack = { showCatalogue = false }, onAdded = onSourcesChanged)
+        return
+    }
 
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(20.dp),
         verticalArrangement = Arrangement.spacedBy(19.dp)) {
@@ -57,6 +70,19 @@ internal fun SettingsScreen(
         SettingRow(if (sr) "Jedna vest po ekranu" else "Page by page", foreground) {
             Switch(checked = paged, onCheckedChange = onPaged)
         }
+        TextButton(onClick = { showTopics = !showTopics }) {
+            Text(if (sr) "Teme koje se prikazuju" else "Visible topics")
+        }
+        if (showTopics) Topic.entries.filter { it != Topic.ALL }.forEach { topic ->
+            var checked by remember(topic) { mutableStateOf(topic in settings.visibleTopics()) }
+            SettingRow(topic.label(sr), foreground) {
+                Checkbox(checked = checked, onCheckedChange = { selected ->
+                    checked = selected
+                    settings.setTopicVisible(topic, selected)
+                    onTopicsChanged()
+                })
+            }
+        }
         HorizontalDivider(color = muted.copy(alpha = 0.2f))
         Heading(if (sr) "Izvori" else "Sources", muted)
         TextButton(onClick = { showSources = !showSources }) {
@@ -85,13 +111,17 @@ internal fun SettingsScreen(
             Switch(checked = advanced, onCheckedChange = onAdvanced)
         }
         if (advanced) {
-            Text(if (sr) "Arhiva, katalog izvora i cloud podešavanja dobiće poseban ekran."
-                else "Archive, source catalogue and cloud options will have their own screen.",
-                color = muted, fontSize = 13.sp)
+            TextButton(onClick = { showCatalogue = true }) {
+                Text(if (sr) "Istraži kataloge RSS izvora" else "Explore RSS source catalogues")
+            }
         }
         HorizontalDivider(color = muted.copy(alpha = 0.2f))
         Text(if (sr) "Razvio seraphi" else "Developed by seraphi",
-            color = foreground, fontSize = 13.sp)
+            color = foreground, fontSize = 13.sp,
+            modifier = Modifier.clickable {
+                context.startActivity(Intent(Intent.ACTION_SENDTO,
+                    Uri.parse("mailto:seraphiheaven@gmail.com")))
+            })
     }
 
     if (showAdd) {

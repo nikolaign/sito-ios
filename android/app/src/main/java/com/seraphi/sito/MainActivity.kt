@@ -13,6 +13,9 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.gestures.ScrollableDefaults
+import androidx.compose.foundation.gestures.snapping.rememberSnapFlingBehavior
+import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
@@ -58,6 +61,7 @@ class MainActivity : ComponentActivity() {
 
 private enum class Screen { FEED, ARCHIVE, SETTINGS, READER }
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun SitoRoot() {
     val context = LocalContext.current
@@ -89,21 +93,22 @@ private fun SitoRoot() {
     var updatedAt by remember { mutableLongStateOf(0L) }
     var refreshNonce by remember { mutableIntStateOf(0) }
     var savedNonce by remember { mutableIntStateOf(0) }
-    val scope = rememberCoroutineScope()
+    var topicsNonce by remember { mutableIntStateOf(0) }
+    val visibleTopics = remember(topicsNonce) { settings.visibleTopics() }
+    var sourcesDirty by remember { mutableStateOf(false) }
+    fun home() {
+        screen = Screen.FEED
+        reader = null
+        if (sourcesDirty) { currentSources = settings.allSources(); sourcesDirty = false; refreshNonce++ }
+    }
 
-    LaunchedEffect(refreshNonce, currentSources) {
+    LaunchedEffect(refreshNonce) {
         loading = true
         failure = ""
         try {
             val selected = currentSources.filter { settings.enabled(it.id, it.defaultOn) }
-            val results = withContext(Dispatchers.IO) {
-                selected.map { source ->
-                    runCatching { NewsEngine.fetch(source) }.getOrElse { error ->
-                        error.message?.let { synchronized(this) { /* diagnostic available below */ } }
-                        emptyList()
-                    }
-                }.flatten()
-            }
+            val report = NewsEngine.fetchAll(selected)
+            val results = report.items
             withContext(Dispatchers.IO) { archive.merge(results) }
             feed.clear()
             feed.addAll(NewsEngine.mixed(results))
@@ -116,10 +121,7 @@ private fun SitoRoot() {
         }
     }
 
-    BackHandler(screen != Screen.FEED) {
-        screen = if (screen == Screen.READER) Screen.FEED else Screen.FEED
-        reader = null
-    }
+    BackHandler(screen != Screen.FEED) { home() }
 
     MaterialTheme(
         colorScheme = if (isDark) darkColorScheme(primary = signature, background = background, surface = night)
@@ -127,12 +129,12 @@ private fun SitoRoot() {
     ) {
         Column(Modifier.fillMaxSize().background(background)) {
             if (screen == Screen.READER && reader != null) {
-                Header(label = reader!!.sourceName, isDark = isDark, onHome = { screen = Screen.FEED },
+                Header(label = reader!!.sourceName, isDark = isDark, onHome = { home() },
                     onArchive = {}, onSettings = {}, showControls = false)
                 ArticleBrowser(reader!!, Modifier.weight(1f))
             } else if (screen == Screen.SETTINGS) {
                 Header(label = if (sr) "Podešavanja" else "Settings", isDark = isDark,
-                    onHome = { screen = Screen.FEED }, onArchive = {}, onSettings = {}, showControls = false)
+                    onHome = { home() }, onArchive = {}, onSettings = {}, showControls = false)
                 SettingsScreen(
                     sr = sr, foreground = foreground, muted = muted, currentSources = currentSources,
                     settings = settings, language = language, theme = theme, compact = compact,
@@ -142,11 +144,12 @@ private fun SitoRoot() {
                     onCompact = { compact = it; settings.compact = it },
                     onPaged = { paged = it; settings.paged = it },
                     onAdvanced = { advanced = it; settings.advanced = it },
-                    onSourcesChanged = { currentSources = settings.allSources(); refreshNonce++ },
+                    onSourcesChanged = { currentSources = settings.allSources(); sourcesDirty = true },
+                    onTopicsChanged = { topicsNonce++; if (topic !in settings.visibleTopics()) topic = Topic.ALL },
                 )
             } else if (screen == Screen.ARCHIVE) {
                 Header(label = if (sr) "Arhiva" else "Archive", isDark = isDark,
-                    onHome = { screen = Screen.FEED }, onArchive = {}, onSettings = {}, showControls = false)
+                    onHome = { home() }, onArchive = {}, onSettings = {}, showControls = false)
                 key(savedNonce) {
                     ArchiveScreen(archive, sr, foreground, muted,
                         onOpen = { reader = it; screen = Screen.READER },
@@ -178,9 +181,9 @@ private fun SitoRoot() {
                     .filter { topic == Topic.ALL || TopicRules.classify(it) == topic }
 
                 if (sourceFilter == null) {
-                    ScrollableTabRow(selectedTabIndex = Topic.entries.indexOf(topic), edgePadding = 14.dp,
+                    ScrollableTabRow(selectedTabIndex = visibleTopics.indexOf(topic).coerceAtLeast(0), edgePadding = 14.dp,
                         containerColor = Color.Transparent, divider = {}, indicator = {}) {
-                        Topic.entries.forEach { item ->
+                        visibleTopics.forEach { item ->
                             Tab(selected = item == topic, onClick = { topic = item },
                                 text = { Text(item.label(sr), color = if (item == topic) signature else muted, fontSize = 12.sp) })
                         }
@@ -220,19 +223,30 @@ private fun SitoRoot() {
                     detectHorizontalDragGestures(onHorizontalDrag = { _, delta -> dragged += delta },
                         onDragEnd = {
                             if (sourceFilter == null && kotlin.math.abs(dragged) > 85f) {
-                                val next = Topic.entries.indexOf(topic) + if (dragged < 0) 1 else -1
-                                if (next in Topic.entries.indices) topic = Topic.entries[next]
+                                val next = visibleTopics.indexOf(topic) + if (dragged < 0) 1 else -1
+                                if (next in visibleTopics.indices) topic = visibleTopics[next]
                             }
                             dragged = 0f
                         })
                 }
-                LazyColumn(modifier = Modifier.fillMaxSize().then(pointer), state = listState,
-                    contentPadding = PaddingValues(horizontal = 18.dp, vertical = 12.dp),
-                    verticalArrangement = Arrangement.spacedBy(if (compact) 9.dp else 16.dp)) {
-                    items(filtered, key = { it.id }) { item ->
-                        StoryCardAndroid(item, compact, isDark, foreground, muted,
-                            onOpen = { reader = item; screen = Screen.READER },
-                            onBookmark = { archive.bookmark(item.id, true); savedNonce++ })
+                BoxWithConstraints(Modifier.fillMaxSize()) {
+                    val pageHeight = maxHeight
+                    val snap = rememberSnapFlingBehavior(listState)
+                    LazyColumn(modifier = Modifier.fillMaxSize().then(pointer), state = listState,
+                        flingBehavior = if (paged) snap else ScrollableDefaults.flingBehavior(),
+                        contentPadding = if (paged) PaddingValues(0.dp)
+                            else PaddingValues(horizontal = 18.dp, vertical = 12.dp),
+                        verticalArrangement = Arrangement.spacedBy(if (paged) 0.dp else if (compact) 9.dp else 16.dp)) {
+                        items(filtered, key = { it.id }) { item ->
+                            Box(Modifier.fillMaxWidth()
+                                .then(if (paged) Modifier.height(pageHeight).padding(horizontal = 18.dp, vertical = 9.dp).clipToBounds()
+                                    else Modifier)) {
+                                StoryCardAndroid(item, compact && !paged, isDark, foreground, muted,
+                                    fullHeight = paged,
+                                    onOpen = { reader = item; screen = Screen.READER },
+                                    onBookmark = { archive.bookmark(item.id, true); savedNonce++ })
+                            }
+                        }
                     }
                 }
             }
@@ -259,9 +273,11 @@ private fun Header(label: String, isDark: Boolean, onHome: () -> Unit,
 
 @Composable
 private fun StoryCardAndroid(article: Article, compact: Boolean, dark: Boolean, foreground: Color,
-                             muted: Color, onOpen: () -> Unit, onBookmark: () -> Unit) {
+                             muted: Color, fullHeight: Boolean = false,
+                             onOpen: () -> Unit, onBookmark: () -> Unit) {
     val fill = if (dark) Color(0xFF202024) else Color.White
-    Column(Modifier.fillMaxWidth().background(fill, RoundedCornerShape(22.dp))
+    Column(Modifier.fillMaxWidth().then(if (fullHeight) Modifier.fillMaxHeight() else Modifier)
+        .background(fill, RoundedCornerShape(22.dp))
         .clickable { onOpen() }.padding(if (compact) 17.dp else 22.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text(article.sourceName.uppercase(), color = signature, fontSize = 11.sp,
@@ -286,6 +302,7 @@ private fun StoryCardAndroid(article: Article, compact: Boolean, dark: Boolean, 
             Text(article.summary, color = muted, fontFamily = FontFamily.Serif,
                 fontSize = 17.sp, lineHeight = 26.sp, maxLines = 6, overflow = TextOverflow.Ellipsis)
         }
+        if (fullHeight) Spacer(Modifier.weight(1f))
         Spacer(Modifier.height(13.dp))
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text(article.sourceName, color = muted, fontSize = 12.sp)

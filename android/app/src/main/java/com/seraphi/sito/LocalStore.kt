@@ -130,6 +130,15 @@ class SettingsStore(context: Context) {
         get() = prefs.getBoolean("advanced", false)
         set(v) { prefs.edit().putBoolean("advanced", v).apply() }
 
+    private val defaultTopics = setOf(Topic.POLITICS, Topic.SOCIETY, Topic.TECHNOLOGY,
+        Topic.SCIENCE, Topic.CULTURE)
+    fun visibleTopics(): List<Topic> = Topic.entries.filter {
+        it == Topic.ALL || prefs.getBoolean("topic_${it.name}", it in defaultTopics)
+    }
+    fun setTopicVisible(topic: Topic, visible: Boolean) {
+        if (topic != Topic.ALL) prefs.edit().putBoolean("topic_${topic.name}", visible).apply()
+    }
+
     fun enabled(id: String, default: Boolean = true) = prefs.getBoolean("source_$id", default)
     fun setEnabled(id: String, enabled: Boolean) { prefs.edit().putBoolean("source_$id", enabled).apply() }
 
