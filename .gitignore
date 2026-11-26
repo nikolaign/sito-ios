@@ -1,0 +1,39 @@
+# Xcode / Swift
+.DS_Store
+*.xcuserstate
+*.xcuserdata/
+*.xccheckout
+*.xcscmblueprint
+.swiftpm/
+DerivedData/
+build/
+*.xcarchive
+*.ipa
+*.dSYM/
+*.dSYM.zip
+
+# Local signing and personal overrides
+*.mobileprovision
+*.p12
+*.cer
+*.entitlements.local
+
+# Local diagnostics
+*.log
+
+# Private configuration and user archives
+cloudflare/wrangler.toml
+cloudflare/wrangler.local.toml
+cloudflare/.dev.vars*
+cloudflare/.env*
+cloudflare/.wrangler/
+.env
+.env.*
+*.sitobackup
+*.sqlite
+*.sqlite-shm
+*.sqlite-wal
+SITO-archive-*.json
+*.p8
+*.pem
+*.key

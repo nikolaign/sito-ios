@@ -1,0 +1,15 @@
+name = "sito-private-vault"
+main = "worker.mjs"
+compatibility_date = "2026-11-18"
+
+# Copy this file to wrangler.toml (which is gitignored).
+# Uncomment these four lines and paste the UUID from:
+# npx wrangler d1 create sito-private-archive
+# [[d1_databases]]
+# binding = "ARCHIVE"
+# database_name = "sito-private-archive"
+# database_id = "YOUR_D1_DATABASE_UUID"
+
+# Set the access token on Cloudflare using:
+# npx wrangler secret put SITO_TOKEN
+# NEVER commit the token or any recovery keys.
