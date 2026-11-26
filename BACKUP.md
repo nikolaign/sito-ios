@@ -17,7 +17,7 @@ Normal SQLite history and encrypted backups **do not contain downloaded images**
 
 The **full text / total** counter under Storage & Backups distinguishes credible complete stories from RSS previews. An older SITO version counted some 150-character publisher teasers as complete; version 0.9.2 repairs that status without discarding the snippet. SITO retains substantial article bodies from feeds, attempts missing original pages after refresh, and offers batches of 40 older articles. Unavailable pages, paywalls and JavaScript-only bodies may remain previews. Backups cannot invent missing text, and merges preserve a credible complete copy rather than replacing it with a preview.
 
-**Verify Cloud Archive** is a read-only audit available in Storage & Backups. It decrypts every referenced cloud chunk with the recovery key, checks the ciphertext hash, decoded payload fingerprint, article counts and all optional saved PDFs. It then reports the actual number of credible complete texts in the current cloud snapshot. It does not delete, replace or restore local or cloud records. The Worker never receives unencrypted article text.
+After **Back Up Now**, SITO runs a read-only integrity check automatically. It downloads and authenticates the encrypted chunks, checks article counts and any included PDFs, then reports how many full texts are actually stored. You can repeat that check under **More cloud actions**. It never deletes or restores articles, and the Worker never receives unencrypted article text.
 
 ## Where can the file go?
 

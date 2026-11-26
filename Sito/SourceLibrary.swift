@@ -12,6 +12,11 @@ struct DirectoryFeed: Codable, Hashable, Identifiable {
 
     var id: String { feedURL.lowercased() }
     var host: String { URL(string: feedURL)?.host ?? feedURL }
+
+    static func inferredSection(for feed: String) -> NewsSection {
+        let host = URL(string: feed)?.host?.lowercased() ?? ""
+        return host == "rs" || host.hasSuffix(".rs") ? .serbia : .world
+    }
 }
 
 struct FeedDirectory: Identifiable, Codable, Hashable {
@@ -21,13 +26,12 @@ struct FeedDirectory: Identifiable, Codable, Hashable {
     var editable: Bool
 
     static let featured: [FeedDirectory] = [
-        .init(id: "plenary-news", title: "World news", url: "https://raw.githubusercontent.com/spians/awesome-RSS-feeds/master/recommended/with_category/News.opml", editable: false),
-        .init(id: "plenary-tech", title: "Technology", url: "https://raw.githubusercontent.com/spians/awesome-RSS-feeds/master/recommended/with_category/Tech.opml", editable: false),
-        .init(id: "plenary-science", title: "Science", url: "https://raw.githubusercontent.com/spians/awesome-RSS-feeds/master/recommended/with_category/Science.opml", editable: false),
-        .init(id: "plenary-economy", title: "Business", url: "https://raw.githubusercontent.com/spians/awesome-RSS-feeds/master/recommended/with_category/Business%20%26%20Economy.opml", editable: false),
-        .init(id: "plenary-us", title: "United States", url: "https://raw.githubusercontent.com/spians/awesome-RSS-feeds/master/countries/with_category/United%20States.opml", editable: false),
-        .init(id: "independent-global", title: "Global briefing", url: "https://raw.githubusercontent.com/ajdelaguila/opml-news-feeds/main/global-briefing.opml.xml", editable: false),
-        .init(id: "independent-tech", title: "Tech & engineering", url: "https://raw.githubusercontent.com/ajdelaguila/opml-news-feeds/main/tech-en.opml.xml", editable: false)
+        .init(id: "plenary-news", title: "News", url: "https://raw.githubusercontent.com/plenaryapp/awesome-rss-feeds/master/recommended/with_category/News.opml", editable: false),
+        .init(id: "plenary-tech", title: "Technology", url: "https://raw.githubusercontent.com/plenaryapp/awesome-rss-feeds/master/recommended/with_category/Tech.opml", editable: false),
+        .init(id: "plenary-science", title: "Science", url: "https://raw.githubusercontent.com/plenaryapp/awesome-rss-feeds/master/recommended/with_category/Science.opml", editable: false),
+        .init(id: "plenary-economy", title: "Business", url: "https://raw.githubusercontent.com/plenaryapp/awesome-rss-feeds/master/recommended/with_category/Business%20%26%20Economy.opml", editable: false),
+        .init(id: "plenary-environment", title: "Environment", url: "https://raw.githubusercontent.com/plenaryapp/awesome-rss-feeds/master/recommended/with_category/Environment.opml", editable: false),
+        .init(id: "plenary-books", title: "Books", url: "https://raw.githubusercontent.com/plenaryapp/awesome-rss-feeds/master/recommended/with_category/Books.opml", editable: false)
     ]
 }
 
@@ -96,7 +100,8 @@ enum DirectoryImporter {
                 let name = (value["title"] ?? value["name"] ?? value["text"]) as? String ?? url.host ?? "Feed"
                 let website = (value["htmlUrl"] ?? value["website"] ?? value["site_url"]) as? String
                 let group = (value["category"] ?? value["group"]) as? String ?? ""
-                let section = ((value["section"] as? String)?.lowercased() == "serbia") ? NewsSection.serbia : .world
+                let section: NewsSection = ((value["section"] as? String)?.lowercased() == "serbia")
+                    ? .serbia : DirectoryFeed.inferredSection(for: url.absoluteString)
                 return DirectoryFeed(name: name, feedURL: url.absoluteString,
                                      websiteURL: website.flatMap { secureURL($0)?.absoluteString }, group: group, section: section)
             }
@@ -108,7 +113,7 @@ enum DirectoryImporter {
                 guard !raw.hasPrefix("#"), (raw.hasPrefix("http://") || raw.hasPrefix("https://")),
                       let url = secureURL(raw) else { return nil }
                 return DirectoryFeed(name: url.host ?? "Feed", feedURL: url.absoluteString,
-                                     websiteURL: nil, group: "", section: .world)
+                                     websiteURL: nil, group: "", section: DirectoryFeed.inferredSection(for: url.absoluteString))
             }
         }
         var seen = Set<String>()
@@ -135,7 +140,7 @@ private final class OPMLDirectoryParser: NSObject, XMLParserDelegate {
             feeds.append(DirectoryFeed(name: title.isEmpty ? (url.host ?? "Feed") : title,
                                        feedURL: url.absoluteString,
                                        websiteURL: attributes["htmlUrl"].flatMap { DirectoryImporter.secureURL($0)?.absoluteString },
-                                       group: group, section: .world))
+                                       group: group, section: DirectoryFeed.inferredSection(for: url.absoluteString)))
             groups.append(group)
         } else {
             groups.append(title.isEmpty ? group : title)
@@ -247,7 +252,7 @@ struct SourceLibraryView: View {
     @StateObject private var directory = FeedDirectoryStore()
     @State private var selectedID = "picks"
     @State private var query = ""
-    @State private var importedSection: NewsSection = .world
+    @State private var regionOverrides: [String: NewsSection] = [:]
     @State private var showNewCatalog = false
     @State private var editingCatalog: FeedDirectory?
     @State private var showManualSource = false
@@ -291,14 +296,6 @@ struct SourceLibraryView: View {
                     introduction
                     directoryPicker
                     if let chosenDirectory { directoryStatus(chosenDirectory) }
-                    if selectedID != "picks" {
-                        Picker(tr("Dodaj u", "Add to"), selection: $importedSection) {
-                            Text(tr("Srbija", "Serbia")).tag(NewsSection.serbia)
-                            Text(tr("Svet", "World")).tag(NewsSection.world)
-                        }
-                        .pickerStyle(.segmented)
-                        .accessibilityLabel(tr("Rubrika za nove izvore", "Section for new sources"))
-                    }
                     HStack {
                         Text(tr("IZVORI", "SOURCES"))
                             .font(.caption.weight(.bold)).tracking(2).foregroundStyle(.secondary)
@@ -472,13 +469,23 @@ struct SourceLibraryView: View {
                 if !candidate.group.isEmpty {
                     Text(candidate.group).font(.caption2).foregroundStyle(.tertiary).lineLimit(1)
                 }
+                if existing == nil {
+                    Menu {
+                        Button(tr("Srbija", "Serbia")) { regionOverrides[candidate.id] = .serbia }
+                        Button(tr("Svet", "World")) { regionOverrides[candidate.id] = .world }
+                    } label: {
+                        Label((regionOverrides[candidate.id] ?? candidate.section) == .serbia
+                              ? tr("Srbija", "Serbia") : tr("Svet", "World"), systemImage: "chevron.down")
+                            .font(.caption2).foregroundStyle(.secondary)
+                    }
+                }
             }
             Spacer(minLength: 6)
             Button {
                 if let existing { prefs.setEnabled(existing, true) }
                 else if let url = DirectoryImporter.secureURL(candidate.feedURL) {
                     prefs.addCustom(name: candidate.name, url: url,
-                                    section: selectedID == "picks" ? candidate.section : importedSection,
+                                    section: regionOverrides[candidate.id] ?? candidate.section,
                                     website: candidate.websiteURL)
                 }
             } label: {

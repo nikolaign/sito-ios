@@ -16,8 +16,10 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.style.TextAlign
@@ -27,6 +29,7 @@ import androidx.lifecycle.Lifecycle
 import kotlinx.coroutines.delay
 import kotlin.math.cos
 import kotlin.math.sin
+import kotlin.random.Random
 
 private enum class JourneyPhase { PLAYING, PASSAGE, RECKONING, REVELATION, FAILED, COLLAPSE, AFTERMATH }
 
@@ -164,7 +167,7 @@ internal fun DreamGateJourneyAndroid(articles: List<Article>, sr: Boolean, onExi
     }
 
     Box(Modifier.fillMaxSize().background(Color.Black)) {
-        GateAtmosphere()
+        if (phase != JourneyPhase.FAILED) GateAtmosphere()
         when (phase) {
             JourneyPhase.PLAYING, JourneyPhase.RECKONING -> Column(
                 Modifier.fillMaxSize().padding(horizontal = 22.dp, vertical = 9.dp),
@@ -210,7 +213,7 @@ internal fun DreamGateJourneyAndroid(articles: List<Article>, sr: Boolean, onExi
             }
             JourneyPhase.PASSAGE, JourneyPhase.REVELATION -> GateRitualScreen(room, sr, false)
             JourneyPhase.FAILED -> Box(Modifier.fillMaxSize()) {
-                GateRitualScreen(room, sr, true)
+                GateFailureSigil()
                 Column(Modifier.fillMaxSize().padding(35.dp), horizontalAlignment = Alignment.CenterHorizontally,
                     verticalArrangement = Arrangement.Center) {
                     Text(if (sr) "NISI PROŠAO" else "YOU FAILED", color = gateRed,
@@ -244,6 +247,36 @@ internal fun DreamGateJourneyAndroid(articles: List<Article>, sr: Boolean, onExi
                 witnessScore, witnessTotal, finalHeadline, endingSeed, cycle, doorChoice,
                 chooseDoor = { doorChoice = it }, openPortal = ::openPortal, beginAgain = ::newCycle,
                 onExit = onExit)
+        }
+    }
+}
+
+@Composable
+private fun GateFailureSigil() {
+    val infinite = rememberInfiniteTransition(label = "quiet failure")
+    val breath by infinite.animateFloat(.96f, 1.045f,
+        infiniteRepeatable(tween(6500, easing = FastOutSlowInEasing), RepeatMode.Reverse),
+        label = "square breathing")
+    var fracture by remember { mutableIntStateOf(0) }
+    LaunchedEffect(Unit) {
+        while (true) {
+            delay(Random.nextLong(900, 3900))
+            fracture = if (Random.nextBoolean()) 1 else -1
+            delay(Random.nextLong(35, 90))
+            fracture = 0
+        }
+    }
+    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+        Canvas(Modifier.size(168.dp)) {
+            drawCircle(brush = Brush.radialGradient(
+                listOf(gateRed.copy(alpha = .13f), Color.Transparent)), radius = size.width * .52f)
+            val side = size.minDimension * .64f * breath
+            val dx = fracture * 1.5.dp.toPx()
+            drawRect(color = gateRed.copy(alpha = if (fracture == 0) .40f else .74f),
+                topLeft = Offset((size.width - side) / 2 + dx, (size.height - side) / 2 - dx / 3),
+                size = Size(side, side), style = Stroke(width = 1.dp.toPx()))
+            drawCircle(color = gateRed.copy(alpha = if (fracture == 0) .95f else .56f),
+                radius = 3.dp.toPx(), center = Offset(size.width / 2 - dx, size.height / 2))
         }
     }
 }

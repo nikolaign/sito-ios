@@ -62,6 +62,44 @@ class NewsEngineTest {
         assertEquals("Radio", SourceDirectory.parse(json).single().name)
     }
 
+    @Test fun curatedCollectionsAreDistinctAndUseExistingPlenaryTopics() {
+        assertEquals(listOf("News", "Technology", "Science", "Business", "Environment", "Books"),
+            SourceDirectory.featured.map { it.title })
+        assertEquals(6, SourceDirectory.featured.map { it.url }.toSet().size)
+        assertTrue(SourceDirectory.featured.all { it.url.startsWith(
+            "https://raw.githubusercontent.com/plenaryapp/awesome-rss-feeds/") })
+    }
+
+    @Test fun directorySuggestsSerbiaForSerbianHostsAndWorldElsewhere() {
+        assertEquals(Region.SERBIA, SourceDirectory.inferredRegion("https://n1info.rs/feed/"))
+        assertEquals(Region.WORLD, SourceDirectory.inferredRegion("https://bbc.com/feed/"))
+        assertEquals(Region.SERBIA, SourceDirectory.parse(
+            "https://www.danas.rs/feed/\nhttps://feeds.bbci.co.uk/news/rss.xml").first().region)
+    }
+
+    @Test fun longerFogMazeHasReachableSealsAndDeadEnds() {
+        repeat(60) {
+            val maze = FogMaze.create()
+            assertEquals(19, FogMaze.width)
+            assertEquals(3, maze.seals.size)
+            val reached = mutableSetOf(maze.start)
+            val queue = ArrayDeque<Int>().apply { add(maze.start) }
+            while (queue.isNotEmpty()) {
+                val tile = queue.removeFirst()
+                val row = tile / FogMaze.width; val col = tile % FogMaze.width
+                for ((dr, dc) in listOf(-1 to 0, 1 to 0, 0 to -1, 0 to 1)) {
+                    val r = row + dr; val c = col + dc
+                    if (r !in 0 until FogMaze.width || c !in 0 until FogMaze.width) continue
+                    val next = r * FogMaze.width + c
+                    if (next in maze.open && reached.add(next)) queue.add(next)
+                }
+            }
+            assertTrue(maze.exit in reached)
+            assertTrue(reached.containsAll(maze.seals))
+            assertTrue(maze.open.size >= 150)
+        }
+    }
+
     @Test fun sourceDirectoryPromotesPlainHttpToHttps() {
         assertEquals("https://example.org/feed", SourceDirectory.secureURL("http://example.org/feed"))
         assertNull(SourceDirectory.secureURL("javascript:alert(1)"))

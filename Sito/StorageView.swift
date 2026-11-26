@@ -31,6 +31,12 @@ struct StorageView: View {
     @AppStorage("archiveAutoComplete") private var automaticText = true
     @AppStorage("archiveAutoWiFiOnly") private var automaticTextWiFiOnly = true
     @State private var captureDetailsExpanded = false
+    @State private var showTextOptions = false
+    @State private var showRecovery = false
+    @State private var showCloudOptions = false
+    @State private var showCloudConnection = false
+    @State private var showCloudDiagnostics = false
+    @State private var showCleanup = false
     @State private var portableImporting = false
     @State private var portableShare: SharePayload?
     @State private var temporaryExportURL: URL?
@@ -63,17 +69,11 @@ struct StorageView: View {
                     }
                 } header: { Text(tr("Na ovom iPhone-u", "On this iPhone")) }
                   footer: {
-                    Text(tr("Tekst, naslov, datum, izvor, link, kategorije i dostupni metapodaci čuvaju se u SQLite bazi bez slika. Brojač razlikuje ceo tekst od RSS opisa.",
-                            "Text, title, date, publisher, URL, categories and available metadata are stored in SQLite without images. The counter distinguishes full text from RSS previews."))
+                    Text(tr("Arhiva čuva tekst i podatke o izvoru bez slika. Pun tekst je odvojen od kratkih RSS opisa.",
+                            "Text and source details are kept without images. Full articles are counted separately from RSS previews."))
                 }
 
                 Section {
-                    Toggle(tr("Automatski dopunjavaj tekstove", "Complete missing texts automatically"),
-                           isOn: $automaticText).tint(Ink.red)
-                    if automaticText {
-                        Toggle(tr("Samo preko Wi-Fi mreže", "Wi-Fi only"), isOn: $automaticTextWiFiOnly)
-                            .tint(Ink.red)
-                    }
                     Button {
                         Task { await feed.completeMissingText(limit: 40) }
                     } label: {
@@ -98,8 +98,15 @@ struct StorageView: View {
                                 .font(.footnote.monospacedDigit())
                         }
                     }
-                    if !feed.textCaptureStats.isEmpty {
-                        DisclosureGroup(isExpanded: $captureDetailsExpanded) {
+                    DisclosureGroup(isExpanded: $showTextOptions) {
+                        Toggle(tr("Automatski dopunjavaj tekstove", "Complete missing texts automatically"),
+                               isOn: $automaticText).tint(Ink.red)
+                        if automaticText {
+                            Toggle(tr("Samo preko Wi-Fi mreže", "Wi-Fi only"), isOn: $automaticTextWiFiOnly)
+                                .tint(Ink.red)
+                        }
+                        if !feed.textCaptureStats.isEmpty {
+                            DisclosureGroup(isExpanded: $captureDetailsExpanded) {
                             ForEach(feed.textCaptureStats.values.sorted { $0.name.localizedStandardCompare($1.name) == .orderedAscending }) { stat in
                                 LabeledContent(stat.name, value: "\(stat.completed)/\(stat.attempts)")
                                     .font(.footnote)
@@ -107,20 +114,21 @@ struct StorageView: View {
                             Text(tr("Broj uspeha u pokušajima dopunjavanja, ne procenat svih vesti tog izvora.",
                                     "Successful attempts, not the percentage of all stories published by each source."))
                                 .font(.caption2).foregroundStyle(.secondary)
-                        } label: {
-                            Label(tr("Uspešnost po izvoru", "Capture results by source"),
-                                  systemImage: "chart.bar.xaxis")
+                            } label: {
+                                Label(tr("Uspešnost po izvoru", "Capture results by source"),
+                                      systemImage: "chart.bar.xaxis")
+                            }
                         }
+                    } label: {
+                        Label(tr("Podešavanja dopune teksta", "Text capture settings"), systemImage: "slider.horizontal.3")
                     }
                 } header: { Text(tr("Puni tekst bez slika", "Full text without images")) }
                   footer: {
-                    Text(tr("Najviše 24 automatska pokušaja dnevno, u malim razmacima, samo kada iOS dozvoli rad. Ušteda energije je prioritet. Neuspešne stranice pokušavaju se ponovo najviše jednom mesečno. Procena potpunosti teksta je pažljiva, ali nije garancija verne kopije stranice.",
-                            "Up to 24 automatic attempts a day, in small batches, whenever iOS permits. Energy use stays low. Failed pages are retried at most monthly. Full-text detection is conservative, not a guarantee of perfect page fidelity."))
+                    Text(tr("Neki sajtovi dozvoljavaju samo kratak pregled. Original možeš posebno sačuvati kao PDF.",
+                            "Some publishers only allow a preview. Save an original PDF when you need the full page."))
                 }
 
                 Section {
-                    Toggle(tr("Dodaj ručno sačuvane PDF-ove (sa slikama)", "Include manually saved PDFs (with images)"),
-                           isOn: $portablePDFs).tint(Ink.red)
                     Button {
                         Task {
                             do {
@@ -140,20 +148,17 @@ struct StorageView: View {
                               systemImage: "square.and.arrow.down")
                     }
                     .disabled(vault.busy)
+                    Toggle(tr("Dodaj i sačuvane PDF-ove", "Include saved PDFs"), isOn: $portablePDFs)
+                        .tint(Ink.red)
                     if vault.busy { ProgressView(vault.status).tint(Ink.red) }
                 } header: { Text(tr("Backup gde god želiš", "Backup anywhere")) }
                   footer: {
-                    Text(tr("Tekst i svi dostupni metapodaci uvek su uključeni, bez preuzetih slika. Opcioni PDF-ovi sadrže originalnu stranicu i slike samo za članke koje si ručno sačuvao kao PDF. Šifrovani .sitobackup možeš smestiti u Files, cloud, na NAS ili Mac.",
-                            "Full text and available metadata are always included, without downloaded images. Optional PDFs contain the original page and images only for articles you manually saved as PDF. Put the encrypted .sitobackup in Files, a cloud drive, NAS or Mac."))
+                    Text(tr("Šifrovani .sitobackup možeš sačuvati u Files, na NAS, Mac ili u bilo koji cloud drive.",
+                            "Save an encrypted .sitobackup to Files, a NAS, your Mac or any cloud drive."))
                 }
 
                 Section {
-                    HStack {
-                        Text(tr("Ključ za oporavak", "Recovery key"))
-                        Spacer()
-                        Text(vault.hasKey ? tr("Sačuvan", "On device") : tr("Nedostaje", "Missing"))
-                            .foregroundStyle(.secondary)
-                    }
+                    DisclosureGroup(isExpanded: $showRecovery) {
                     Button(vault.hasKey ? tr("Prikaži ključ", "Reveal recovery key") : tr("Napravi ključ", "Generate recovery key")) {
                         do { visibleRecoveryKey = try vault.recoveryKey() } catch { report(error) }
                     }
@@ -171,66 +176,74 @@ struct StorageView: View {
                         if vault.hasKey { confirmRecoveryReplace = true }
                         else { importKey() }
                     }.disabled(recoveryInput.isEmpty || vault.busy)
-                } header: { Text(tr("Ključ za oba načina backupa", "Recovery key for both backups")) }
+                    } label: {
+                        Label(vault.hasKey ? tr("Ključ za oporavak · sačuvan", "Recovery key · saved") :
+                            tr("Ključ za oporavak · potrebno podesiti", "Recovery key · setup needed"),
+                              systemImage: "key.horizontal")
+                    }
+                } header: { Text(tr("Bezbednost", "Security")) }
                   footer: {
-                    Text(tr("Isti privatni ključ štiti i .sitobackup fajlove i Cloudflare backup. Sačuvaj ga van telefona. Bez njega nije moguće dešifrovati arhivu.",
-                            "The same private key protects .sitobackup files and Cloudflare backups. Save it outside your phone; without it, your archive cannot be decrypted."))
+                    Text(tr("Čuvaj ključ van telefona. Bez njega nema vraćanja šifrovanih backupova.",
+                            "Keep your key somewhere safe. Encrypted backups cannot be recovered without it."))
                 }
 
                 Section {
-                    Toggle(tr("Automatski backup", "Automatic backup"), isOn: $vault.enabled).tint(Ink.red)
-                    Toggle(tr("Automatski backup samo preko Wi-Fi", "Auto backup over Wi-Fi only"), isOn: $vault.wifiOnly).tint(Ink.red)
-                    Toggle(tr("Dodaj PDF-ove sa slikama (više prostora)", "Include PDFs with images (more storage)"), isOn: $vault.backupPDFs).tint(Ink.red)
                     if let lastBackup = vault.lastBackup {
                         LabeledContent(tr("Poslednji backup", "Last backup")) { Text(lastBackup, style: .relative) }
-                        LabeledContent(tr("Integritet backupa", "Backup integrity")) {
-                            Label(vault.latestBackupFullyVerified ?
-                                  tr("Potpuno provereno", "Fully verified") :
-                                  tr("Čeka punu proveru", "Full check pending"),
-                                  systemImage: vault.latestBackupFullyVerified ? "checkmark.shield.fill" : "clock")
-                                .font(.footnote)
-                                .foregroundStyle(vault.latestBackupFullyVerified ? Color.green : Color.secondary)
+                        if vault.latestBackupFullyVerified {
+                            Label(tr("Backup je proveren", "Backup verified"), systemImage: "checkmark.shield.fill")
+                                .font(.footnote).foregroundStyle(Color.green)
                         }
                     } else {
                         LabeledContent(tr("Poslednji backup", "Last backup"), value: tr("Još nije urađen", "Never"))
-                    }
-                    if let lastRestore = vault.lastRestore {
-                        LabeledContent(tr("Poslednje vraćanje", "Last restore")) { Text(lastRestore, style: .relative) }
-                    }
-                    if let lastVerification = vault.lastVerification {
-                        LabeledContent(tr("Poslednja puna provera", "Last full verification")) {
-                            Text(lastVerification, style: .relative)
-                        }
                     }
                     if vault.busy { ProgressView(vault.status).tint(Ink.red) }
                     else if !vault.status.isEmpty {
                         Text(vault.status).font(.footnote).foregroundStyle(.secondary)
                     }
                     Button {
-                        Task { do { try await vault.backup(feed: feed) } catch { report(error) } }
+                        Task {
+                            do {
+                                try await vault.backup(feed: feed)
+                                try await vault.verifyCloudArchive()
+                            } catch { report(error) }
+                        }
                     } label: { Label(tr("Backup sada", "Back Up Now"), systemImage: "icloud.and.arrow.up") }
                     .disabled(vault.busy || feed.textCaptureActive || !vault.hasToken || !vault.hasKey)
-                    Button {
-                        Task { do { try await vault.verifyCloudArchive() } catch { report(error) } }
-                    } label: {
-                        Label(tr("Proveri cloud arhivu", "Verify Cloud Archive"), systemImage: "checkmark.shield")
-                    }
-                    .disabled(vault.busy || !vault.hasToken || !vault.hasKey)
                     Button { confirmRestore = true } label: {
                         Label(tr("Vrati arhivu iz clouda", "Restore from Cloud"), systemImage: "arrow.down.doc")
                     }
                     .disabled(vault.busy || !vault.hasToken || !vault.hasKey)
-                    Button(tr("Vrati prethodni cloud backup", "Restore previous cloud backup")) {
-                        confirmPreviousRestore = true
+                    DisclosureGroup(isExpanded: $showCloudOptions) {
+                        Toggle(tr("Automatski backup", "Automatic backup"), isOn: $vault.enabled).tint(Ink.red)
+                        Toggle(tr("Samo preko Wi-Fi", "Wi-Fi only"), isOn: $vault.wifiOnly).tint(Ink.red)
+                        Toggle(tr("Uključi PDF-ove", "Include saved PDFs"), isOn: $vault.backupPDFs).tint(Ink.red)
+                    } label: {
+                        Label(tr("Automatski backup i PDF", "Automatic backup & PDFs"), systemImage: "slider.horizontal.3")
                     }
-                    .disabled(vault.busy || !vault.hasToken || !vault.hasKey)
-                } header: { Text(tr("Privatni Cloudflare D1", "Private Cloudflare D1")) }
+                    DisclosureGroup(isExpanded: $showCloudDiagnostics) {
+                        if let lastVerification = vault.lastVerification {
+                            LabeledContent(tr("Poslednja provera", "Last integrity check")) {
+                                Text(lastVerification, style: .relative)
+                            }
+                        }
+                        Button(tr("Ponovi proveru integriteta", "Check backup integrity")) {
+                            Task { do { try await vault.verifyCloudArchive() } catch { report(error) } }
+                        }.disabled(vault.busy || !vault.hasToken || !vault.hasKey)
+                        Button(tr("Vrati prethodni backup", "Restore previous backup")) {
+                            confirmPreviousRestore = true
+                        }.disabled(vault.busy || !vault.hasToken || !vault.hasKey)
+                    } label: {
+                        Label(tr("Dodatne cloud radnje", "More cloud actions"), systemImage: "ellipsis")
+                    }
+                } header: { Text(tr("Privatni cloud backup", "Private cloud backup")) }
                   footer: {
-                    Text(tr("Svi pouzdano preuzeti tekstovi i metapodaci idu šifrovani u backup. Provera clouda ponovo preuzima i dešifruje sve pakete i proverava broj celih tekstova, bez menjanja ijednog podatka. PDF-ovi sa slikama su opcioni; D1 Free ima ograničen prostor.",
-                            "All reliably captured text and metadata are encrypted in each backup. Verify Cloud Archive downloads and authenticates every package and counts complete texts without changing any data. Image-rich PDFs are optional; D1 Free has a storage limit."))
+                    Text(tr("Opcioni šifrovani backup na tvom Cloudflare Worker-u. Ručni backup se automatski proverava.",
+                            "Optional encrypted backup on your own Cloudflare Worker. Manual backups are checked automatically."))
                 }
 
                 Section {
+                    DisclosureGroup(isExpanded: $showCloudConnection) {
                     TextField("https://your-vault.workers.dev", text: $vault.endpointText)
                         .textInputAutocapitalization(.never)
                         .autocorrectionDisabled()
@@ -242,13 +255,17 @@ struct StorageView: View {
                         do { try vault.saveToken(tokenInput); tokenInput = "" }
                         catch { report(error) }
                     }.disabled(tokenInput.isEmpty)
-                } header: { Text(tr("Povezivanje tvog clouda", "Connect your own cloud")) }
+                    } label: {
+                        Label(tr("Povezivanje i pristup", "Connection & access"), systemImage: "lock.icloud")
+                    }
+                } header: { Text(tr("Cloud podešavanja", "Cloud setup")) }
                   footer: {
-                    Text(tr("Svako može da podesi sopstveni privatni Cloudflare Worker i D1 bazu bez kartice. SITO ne sadrži ugrađene pristupne tokene. Uputstvo je u cloudflare/README.md.",
-                            "Everyone can set up their own private Cloudflare Worker and D1 database without a credit card. SITO includes no built-in access tokens. Setup: cloudflare/README.md."))
+                    Text(tr("Podržan je sopstveni Cloudflare Worker, ne direktan nalog na drugim cloud servisima. Za bilo koji servis koristi .sitobackup fajl.",
+                            "Connect your own Cloudflare Worker here. For other cloud drives, export a .sitobackup file."))
                 }
 
                 Section {
+                    DisclosureGroup(isExpanded: $showCleanup) {
                     Picker(tr("Starost vesti", "Article age"), selection: $age) {
                         ForEach(HistoryRange.allCases) { range in Text(range.label(sr)).tag(range) }
                     }
@@ -261,10 +278,13 @@ struct StorageView: View {
                         Label(tr("Oslobodi lokalni prostor", "Free Local Storage"), systemImage: "trash")
                     }
                     .disabled(removable == 0 && feed.archiveStorageBytes == 0)
+                    } label: {
+                        Label(tr("Oslobodi lokalni prostor", "Free local storage"), systemImage: "trash")
+                    }
                 } header: { Text(tr("Upravljanje istorijom", "Manage history")) }
                   footer: {
-                    Text(tr("Bookmarkovi i lokalni PDF-ovi se nikada ne brišu ovim postupkom. Preporučuje se proveren backup pre čišćenja. Nova osvežavanja mogu ponovo dodati najnovije vesti u istoriju.",
-                            "Bookmarks and offline PDFs are always preserved. Verify a backup before cleaning up. Future feed refreshes may add recent articles to history again."))
+                    Text(tr("Sačuvani članci i PDF-ovi ostaju netaknuti.",
+                            "Bookmarked articles and saved PDFs stay untouched."))
                 }
             }
             .scrollContentBackground(.hidden)

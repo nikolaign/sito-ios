@@ -78,21 +78,23 @@ private struct EchoGate: View {
     @State private var pattern = (0..<7).map { _ in Int.random(in: 0..<4) }
     @State private var attempt: [Int] = []
     @State private var showing = true
+    @State private var revealIndex = -1
     @State private var mistake = false
     @State private var round = 0
+    @State private var rehearsal = 0
 
     private var sr: Bool { prefs.language == "sr" }
 
     var body: some View {
         VStack(spacing: 19) {
             GateCaption(title: sr ? "ODJEK" : "THE ECHO",
-                        instruction: showing ? (sr ? "Požuda želi ponavljanje. Zapamti redosled pre nego što nestane." : "Desire asks for repetition. Remember the order before it vanishes.") : (sr ? "Ponovi \(pattern.count) znakova, bez izostavljanja." : "Repeat all \(pattern.count) signs without omission."))
+                        instruction: showing ? (sr ? "Odjek dolazi znak po znak. Zapamti redosled; jedna slika nije dovoljna." : "The echo arrives one sign at a time. Remember the order; one image is not enough.") : (sr ? "Ponovi \(pattern.count) znakova, bez izostavljanja." : "Repeat all \(pattern.count) signs without omission."))
             Text("\(round + 1) / 4")
                 .font(.system(size: 11, design: .monospaced)).tracking(4)
                 .foregroundStyle(Ink.red.opacity(0.75))
             HStack(spacing: 3) {
                 ForEach(pattern.indices, id: \.self) { index in
-                    Text(showing ? GateStyle.marks[pattern[index]] : (index < attempt.count ? GateStyle.marks[attempt[index]] : "·"))
+                    Text(showing ? (index == revealIndex ? GateStyle.marks[pattern[index]] : "·") : (index < attempt.count ? GateStyle.marks[attempt[index]] : "·"))
                         .font(.system(size: 20, weight: .ultraLight))
                         .foregroundStyle(mistake ? Ink.red : GateStyle.chalk)
                         .frame(maxWidth: .infinity)
@@ -106,7 +108,21 @@ private struct EchoGate: View {
             }
             .disabled(showing)
         }
-        .task { try? await Task.sleep(nanoseconds: 5_000_000_000); if !Task.isCancelled { showing = false } }
+        .task(id: "\(round)-\(rehearsal)") {
+            showing = true
+            revealIndex = -1
+            do {
+                try await Task.sleep(nanoseconds: 550_000_000)
+                for index in pattern.indices {
+                    try Task.checkCancellation()
+                    revealIndex = index
+                    try await Task.sleep(nanoseconds: 470_000_000)
+                    revealIndex = -1
+                    try await Task.sleep(nanoseconds: 150_000_000)
+                }
+                showing = false
+            } catch { return }
+        }
     }
 
     private func choose(_ number: Int) {
@@ -120,10 +136,6 @@ private struct EchoGate: View {
                 pattern = (0..<(7 + round)).map { _ in Int.random(in: 0..<4) }
                 attempt = []
                 showing = true
-                Task { @MainActor in
-                    try? await Task.sleep(nanoseconds: 5_500_000_000)
-                    if !Task.isCancelled { showing = false }
-                }
             }
         }
         else {
@@ -133,8 +145,7 @@ private struct EchoGate: View {
                 attempt = []
                 showing = true
                 mistake = false
-                try? await Task.sleep(nanoseconds: 2_200_000_000)
-                showing = false
+                rehearsal += 1
             }
         }
     }

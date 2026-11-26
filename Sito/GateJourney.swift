@@ -64,7 +64,7 @@ struct DreamGateJourneyView: View {
     var body: some View {
         GeometryReader { geometry in
             ZStack {
-                DreamAtmosphere()
+                if phase != .failed { DreamAtmosphere() }
                 switch phase {
                 case .playing, .reckoning:
                     playing(in: geometry.size)
@@ -197,7 +197,7 @@ struct DreamGateJourneyView: View {
 
     private var failureScene: some View {
         ZStack {
-            GateRitual(room: room, cycle: cycle, failure: true)
+            GateFailureSigil()
             VStack(spacing: 17) {
                 Spacer()
                 Text(tr("NISI PROŠAO", "YOU FAILED"))
@@ -573,6 +573,47 @@ private struct GateOutlineButton: ButtonStyle {
             .padding(.horizontal, 25).padding(.vertical, 15)
             .overlay(Rectangle().stroke(Ink.red.opacity(configuration.isPressed ? 0.95 : 0.5), lineWidth: 1))
             .opacity(configuration.isPressed ? 0.62 : 1)
+    }
+}
+
+// The failure screen has only a single mark. Its occasional tiny misalignment
+// feels less like a looping effect than the repeating scenery it replaces.
+private struct GateFailureSigil: View {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var breathing = false
+    @State private var fracture = 0
+
+    var body: some View {
+        ZStack {
+            Color.black
+            Circle().fill(Ink.red.opacity(0.14)).frame(width: 180, height: 180)
+                .blur(radius: 65).scaleEffect(breathing ? 1.16 : 0.81)
+            Rectangle().stroke(Ink.red.opacity(fracture == 0 ? 0.39 : 0.74), lineWidth: 0.9)
+                .frame(width: 108, height: 108)
+                .rotationEffect(.degrees(fracture == 0 ? -1.5 : Double(fracture) * 0.8))
+                .scaleEffect(breathing ? 1.045 : 0.97)
+                .offset(x: fracture == 0 ? 0 : CGFloat(fracture) * 1.6,
+                        y: fracture == 0 ? 0 : CGFloat(-fracture) * 0.6)
+            Circle().fill(Ink.red.opacity(fracture == 0 ? 0.95 : 0.55))
+                .frame(width: 6, height: 6)
+                .offset(x: fracture == 0 ? 0 : CGFloat(-fracture) * 1.8)
+        }
+        .onAppear {
+            guard !reduceMotion else { return }
+            withAnimation(.easeInOut(duration: 6.5).repeatForever(autoreverses: true)) { breathing = true }
+        }
+        .task {
+            guard !reduceMotion else { return }
+            while !Task.isCancelled {
+                do { try await Task.sleep(nanoseconds: UInt64.random(in: 900_000_000...3_900_000_000)) }
+                catch { return }
+                fracture = Bool.random() ? 1 : -1
+                do { try await Task.sleep(nanoseconds: UInt64.random(in: 35_000_000...90_000_000)) }
+                catch { return }
+                fracture = 0
+            }
+        }
+        .accessibilityHidden(true)
     }
 }
 

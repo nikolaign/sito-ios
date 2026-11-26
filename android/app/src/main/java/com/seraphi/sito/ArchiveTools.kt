@@ -111,7 +111,7 @@ object ArchiveTools {
 
 @Composable
 fun ArchiveToolsScreen(context: Context, store: LocalStore, sr: Boolean, foreground: Color,
-                       muted: Color, onBack: () -> Unit) {
+                       muted: Color, onBack: () -> Unit, onCloud: () -> Unit) {
     val scope = rememberCoroutineScope()
     var revision by remember { mutableIntStateOf(0) }
     val articles = remember(revision) { store.count() }
@@ -122,6 +122,8 @@ fun ArchiveToolsScreen(context: Context, store: LocalStore, sr: Boolean, foregro
     var portableWithPDFs by remember { mutableStateOf(false) }
     var confirmDelete by remember { mutableStateOf(false) }
     var confirmClearAll by remember { mutableStateOf(false) }
+    var showExtraFormats by remember { mutableStateOf(false) }
+    var showCleanup by remember { mutableStateOf(false) }
     val pdfs = remember { PDFStore(context.applicationContext) }
     val cloud = remember { CloudOptions(context.applicationContext) }
     val encryptedExport = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/octet-stream")) { uri: Uri? ->
@@ -191,13 +193,13 @@ fun ArchiveToolsScreen(context: Context, store: LocalStore, sr: Boolean, foregro
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(20.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp)) {
         TextButton(onClick = onBack) { Text(if (sr) "‹ Nazad" else "‹ Back") }
-        Text(if (sr) "Arhiva i lokalni backup" else "Archive & local backup", color = foreground,
+        Text(if (sr) "Arhiva i backup" else "Archive & backup", color = foreground,
             style = MaterialTheme.typography.headlineMedium)
         Text(if (sr) "$articles vesti · $complete kompletnih tekstova" else "$articles articles · $complete complete texts", color = muted)
         Text(if (sr) "PDF datoteke: ${pdfs.totalBytes() / 1024} KB"
             else "Saved PDFs: ${pdfs.totalBytes() / 1024} KB", color = muted)
-        Text(if (sr) "Čuvaju se naslov, originalni link, datum, izvor, kategorija i dostupan tekst bez slika."
-            else "Titles, source URLs, dates, categories and available article text are stored without images.", color = muted)
+        Text(if (sr) "Tekst i podaci o izvoru čuvaju se bez slika."
+            else "Article text and source details are stored without images.", color = muted)
         if (busy) LinearProgressIndicator(Modifier.fillMaxWidth())
         Button(enabled = !busy, onClick = {
             busy = true
@@ -235,6 +237,14 @@ fun ArchiveToolsScreen(context: Context, store: LocalStore, sr: Boolean, foregro
         }) { Text(if (sr) "Uvezi šifrovani .sitobackup" else "Import encrypted .sitobackup") }
         Text(if (sr) "Kompatibilno sa iOS .sitobackup formatom. Tekst i metapodaci su uvek uključeni."
             else "Compatible with iOS .sitobackup files. Article text and metadata are always included.", color = muted)
+        OutlinedButton(onClick = onCloud) {
+            Text(if (sr) "Privatni cloud backup" else "Private cloud backup")
+        }
+        TextButton(onClick = { showExtraFormats = !showExtraFormats }) {
+            Text(if (sr) "Dodatni formati ${if (showExtraFormats) "⌃" else "⌄"}"
+                else "Other formats ${if (showExtraFormats) "⌃" else "⌄"}")
+        }
+        if (showExtraFormats) {
         OutlinedButton(enabled = !busy, onClick = { save.launch("SITO-archive.json") }) {
             Text(if (sr) "Sačuvaj JSON arhivu" else "Export archive JSON")
         }
@@ -243,8 +253,13 @@ fun ArchiveToolsScreen(context: Context, store: LocalStore, sr: Boolean, foregro
         }
         Text(if (sr) "JSON nije šifrovan. Sačuvaj ga na privatnom mestu."
             else "JSON is unencrypted. Store it in a private location.", color = muted)
+        }
         HorizontalDivider()
-        Text(if (sr) "Oslobodi prostor" else "Free up space", color = foreground)
+        TextButton(onClick = { showCleanup = !showCleanup }) {
+            Text(if (sr) "Oslobodi prostor ${if (showCleanup) "⌃" else "⌄"}"
+                else "Free up space ${if (showCleanup) "⌃" else "⌄"}")
+        }
+        if (showCleanup) {
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             listOf(30, 90, 365).forEach { option ->
                 FilterChip(selected = days == option, onClick = { days = option }, label = { Text("$option d") })
@@ -256,8 +271,9 @@ fun ArchiveToolsScreen(context: Context, store: LocalStore, sr: Boolean, foregro
         TextButton(enabled = !busy, onClick = { confirmClearAll = true }) {
             Text(if (sr) "Obriši celu lokalnu arhivu" else "Clear all local history")
         }
-        Text(if (sr) "Sačuvani članci (bookmarks) neće biti obrisani."
-            else "Bookmarked articles are protected.", color = muted)
+        Text(if (sr) "Brisanje starih vesti čuva oznake. 'Obriši sve' briše i oznake i PDF-ove."
+            else "Deleting old history preserves bookmarks. 'Clear everything' also removes bookmarks and PDFs.", color = muted)
+        }
         if (status.isNotBlank()) Text(status, color = Color(0xFFCB202B))
     }
     if (confirmDelete) AlertDialog(onDismissRequest = { confirmDelete = false },

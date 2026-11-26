@@ -12,7 +12,7 @@ SITO brings together reporting from Serbia and around the world. You choose the 
 - Built-in RSS/Atom/JSON Feed support, plus a searchable directory of feeds you can add with one tap. You can bring your own OPML, JSON or text directory, too.
 - Articles opened at the original publisher's website. iOS requests Safari Reader when available; Android offers a darkened WebView.
 - Bookmarks, searchable local history and optional offline PDFs.
-- An encrypted portable backup you can save wherever you like, or an optional self-hosted Cloudflare D1 backup.
+- An encrypted portable backup you can save wherever you like, or an optional private Cloudflare Worker and D1 backup.
 
 Everyday controls are kept small. Source management, archive cleanup and backup settings live under **Advanced Options**.
 
@@ -20,7 +20,13 @@ Everyday controls are kept small. Source management, archive cleanup and backup 
 
 The initial selection includes N1, Danas, Nova.rs, KRIK, CINS, BBC World, DW English and The Guardian, alongside entries from Raspad Sistema. None of these is mandatory; you can remove them or add your own. Inclusion isn't a guarantee that every article is accurate, and some feeds may occasionally be unavailable.
 
-The optional directory also uses community-maintained feed lists from [Plenary](https://github.com/plenaryapp/awesome-rss-feeds) and [OPML News Feeds](https://github.com/ajdelaguila/opml-news-feeds).
+The six built-in directory collections use community-maintained OPML lists from [Plenary](https://github.com/plenaryapp/awesome-rss-feeds). The directory is for discovery, not an endorsement of every publisher on a list.
+
+## Advanced options
+
+Open **Advanced Options** when you need more control. The source library offers News, Technology, Science, Business, Environment and Books. Choose a collection, tap a publisher to add it, and use the small region selector beside it to decide whether it appears under Serbia or World. For example, you can add a Serbian `.rs` feed to Serbia or place an international science feed under World. The app remembers your subscriptions; updating a collection never adds sources on its own.
+
+Archive & Backup keeps everyday actions visible and puts connection details, recovery keys, integrity checks and cleanup controls behind expandable rows. You can export an encrypted `.sitobackup` through Files or Android's file picker to any storage provider. Direct automatic cloud sync currently supports **your own Cloudflare Worker backed by D1**, hosted by Cloudflare rather than self-hosted. Manual cloud backups run a full integrity check automatically; you can repeat it from the extra actions if needed.
 
 There are no SITO accounts, ads or analytics. Normal reading needs no SITO server. The app connects to the news sites and directories you use; cloud backup is entirely optional and uses your own account.
 

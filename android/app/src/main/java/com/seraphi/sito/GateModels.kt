@@ -1,7 +1,5 @@
 package com.seraphi.sito
 
-import kotlin.math.abs
-
 internal data class SudokuBoard(val answer: IntArray, val clues: IntArray) {
     companion object {
         fun create(): SudokuBoard {
@@ -64,7 +62,7 @@ internal fun conflict(grid: IntArray, cell: Int, digit: Int): Boolean {
 
 internal data class FogMaze(val open: Set<Int>, val start: Int, val exit: Int, val seals: Set<Int>) {
     companion object {
-        const val width = 17
+        const val width = 19
         fun create(): FogMaze {
             val start = width + 1
             val visited = mutableSetOf(start)
@@ -107,11 +105,31 @@ internal data class FogMaze(val open: Set<Int>, val start: Int, val exit: Int, v
             }
             val exit = distance.maxByOrNull { it.value }?.key ?: start
             val seals = mutableSetOf<Int>()
-            val candidates = distance.filter { it.key != start && it.key != exit && it.value > 24 }
-                .toList().shuffled().sortedByDescending { it.second }
-            for ((tile, _) in candidates) {
+            fun connections(tile: Int): List<Int> {
+                val row = tile / width; val col = tile % width
+                return listOf(-1 to 0, 1 to 0, 0 to -1, 0 to 1).mapNotNull { (dr, dc) ->
+                    val r = row + dr; val c = col + dc
+                    (r * width + c).takeIf { r in 0 until width && c in 0 until width && it in open }
+                }
+            }
+            fun separation(first: Int, second: Int): Int {
+                val queue = ArrayDeque<Int>().apply { add(first) }
+                val steps = mutableMapOf(first to 0)
+                while (queue.isNotEmpty()) {
+                    val tile = queue.removeFirst()
+                    if (tile == second) return steps.getValue(tile)
+                    for (next in connections(tile)) if (next !in steps) {
+                        steps[next] = steps.getValue(tile) + 1; queue.add(next)
+                    }
+                }
+                return 0
+            }
+            val candidates = distance.filter { it.key != start && it.key != exit &&
+                it.value > 20 && connections(it.key).size == 1 }
+                .toList().sortedByDescending { it.second }
+            for ((tile, _) in candidates.take(30).shuffled()) {
                 if (seals.size >= 3) break
-                if (seals.all { abs(tile / width - it / width) + abs(tile % width - it % width) >= 7 }) seals += tile
+                if (seals.all { separation(tile, it) >= 24 }) seals += tile
             }
             if (seals.size < 3) distance.entries.sortedByDescending { it.value }.forEach { (tile, _) ->
                 if (seals.size < 3 && tile != start && tile != exit) seals += tile

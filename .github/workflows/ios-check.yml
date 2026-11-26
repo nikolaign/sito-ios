@@ -1,0 +1,31 @@
+name: iOS build check
+
+on:
+  push:
+    branches:
+      - android-port
+      - main
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: macos-15
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+      - name: Build iOS without signing
+        run: ./build-ipa.command
+      - name: Check IPA package
+        run: |
+          ipa="$(find build -maxdepth 1 -name 'SITO-*-unsigned.ipa' -type f -print -quit)"
+          test -n "$ipa"
+          unzip -tq "$ipa"
+      - uses: actions/upload-artifact@v7
+        with:
+          name: sito-ios-compile-check
+          path: build/SITO-*-unsigned.ipa
+          if-no-files-found: error
+          retention-days: 7

@@ -30,6 +30,10 @@ fun CloudVaultScreen(context: Context, store: LocalStore, sr: Boolean,
     val pdfStore = remember { PDFStore(context.applicationContext) }
     var busy by remember { mutableStateOf(false) }
     var status by remember { mutableStateOf("") }
+    var showConnection by remember { mutableStateOf(endpoint.isBlank() || options.secrets.read("worker-token") == null) }
+    var showKey by remember { mutableStateOf(options.secrets.read("recovery-key") == null) }
+    var showOptions by remember { mutableStateOf(false) }
+    var showMore by remember { mutableStateOf(false) }
 
     fun run(action: suspend (progress: (String) -> Unit) -> String) {
         busy = true
@@ -47,10 +51,15 @@ fun CloudVaultScreen(context: Context, store: LocalStore, sr: Boolean,
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(20.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp)) {
         TextButton(onClick = onBack) { Text(if (sr) "‹ Nazad" else "‹ Back") }
-        Text(if (sr) "Privatni cloud backup" else "Private cloud backup", color = foreground,
+        Text(if (sr) "Cloud backup" else "Cloud backup", color = foreground,
             style = MaterialTheme.typography.headlineMedium)
-        Text(if (sr) "Tvoja Cloudflare D1 baza · šifrovanje se radi na telefonu."
-            else "Your own Cloudflare D1 · encryption happens on your phone.", color = muted)
+        Text(if (sr) "Šifrovano na telefonu. Cloudflare Worker je opcioni prostor za arhivu."
+            else "Encrypted on your phone. Your Cloudflare Worker is an optional archive destination.", color = muted)
+        TextButton(onClick = { showConnection = !showConnection }) {
+            Text(if (sr) "Povezivanje i pristup ${if (showConnection) "⌃" else "⌄"}"
+                else "Connection & access ${if (showConnection) "⌃" else "⌄"}")
+        }
+        if (showConnection) {
         OutlinedTextField(value = endpoint, onValueChange = { endpoint = it },
             modifier = Modifier.fillMaxWidth(), singleLine = true,
             label = { Text("HTTPS Worker URL") },
@@ -69,10 +78,15 @@ fun CloudVaultScreen(context: Context, store: LocalStore, sr: Boolean,
         }, enabled = token.isNotBlank()) {
             Text(if (sr) "Sačuvaj token" else "Save access token")
         }
+        }
         HorizontalDivider()
-        Text(if (sr) "Ključ za oporavak" else "Recovery key", color = foreground)
-        Text(if (sr) "Isti Base64 ključ radi za iOS i Android. Sačuvaj ga van telefona."
-            else "The same Base64 key works on iPhone and Android. Keep a safe copy outside your phone.", color = muted)
+        TextButton(onClick = { showKey = !showKey }) {
+            Text(if (sr) "Ključ za oporavak ${if (showKey) "⌃" else "⌄"}"
+                else "Recovery key ${if (showKey) "⌃" else "⌄"}")
+        }
+        if (showKey) {
+        Text(if (sr) "Isti ključ radi na iOS i Androidu. Sačuvaj ga van telefona."
+            else "Use the same key on iOS and Android. Keep a copy outside your phone.", color = muted)
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             OutlinedButton(onClick = {
                 try { recoveryShown = options.recoveryKey() }
@@ -99,6 +113,7 @@ fun CloudVaultScreen(context: Context, store: LocalStore, sr: Boolean,
                 status = if (sr) "Ključ uvezen" else "Recovery key imported"
             } catch (failure: Exception) { status = failure.localizedMessage ?: "Invalid key" }
         }, enabled = recoveryInput.isNotBlank()) { Text(if (sr) "Uvezi ključ" else "Import key") }
+        }
         HorizontalDivider()
         Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
             Text(if (sr) "Automatski backup" else "Automatic backup", color = foreground,
@@ -107,6 +122,11 @@ fun CloudVaultScreen(context: Context, store: LocalStore, sr: Boolean,
                 automatic = it; options.automatic = it
             })
         }
+        TextButton(onClick = { showOptions = !showOptions }) {
+            Text(if (sr) "Wi-Fi i PDF podešavanja ${if (showOptions) "⌃" else "⌄"}"
+                else "Wi-Fi & PDF options ${if (showOptions) "⌃" else "⌄"}")
+        }
+        if (showOptions) {
         Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
             Text(if (sr) "Samo preko Wi-Fi" else "Wi-Fi only", color = foreground,
                 modifier = Modifier.weight(1f))
@@ -118,37 +138,40 @@ fun CloudVaultScreen(context: Context, store: LocalStore, sr: Boolean,
                 modifier = Modifier.weight(1f))
             Switch(checked = includePDFs, onCheckedChange = { includePDFs = it; options.includePDFs = it })
         }
+        }
         if (options.lastBackup > 0) Text(
             (if (sr) "Poslednji backup " else "Last backup ") +
                 java.text.DateFormat.getDateTimeInstance().format(java.util.Date(options.lastBackup)), color = muted)
-        if (options.lastVerified > 0) Text(
-            (if (sr) "Cloud proveren " else "Cloud verified ") +
-                java.text.DateFormat.getDateTimeInstance().format(java.util.Date(options.lastVerified)), color = muted)
         if (options.uploadedDigest.isNotEmpty() && options.uploadedDigest == options.verifiedDigest) {
-            Text(if (sr) "Poslednji backup je potpuno proveren" else "Latest backup fully verified",
-                color = Color(0xFFCB202B))
+            Text(if (sr) "✓ Backup je proveren" else "✓ Backup verified", color = muted)
         }
         if (busy) LinearProgressIndicator(Modifier.fillMaxWidth())
         Button(enabled = !busy, onClick = { run { progress ->
             val saved = cloud.backup(store, progress, pdfStore)
-            if (sr) "Backup sačuvan · ${saved.records} vesti · ${saved.complete} kompletnih tekstova · ${saved.pdfs} PDF-ova"
-            else "Backup saved · ${saved.records} records · ${saved.complete} full texts · ${saved.pdfs} PDFs"
-        } }) { Text(if (sr) "Napravi backup" else "Back Up Now") }
-        OutlinedButton(enabled = !busy, onClick = { run { progress ->
             val verified = cloud.verify(progress)
-            if (sr) "Cloud proveren · ${verified.records} vesti · ${verified.complete} kompletnih tekstova · ${verified.pdfs} PDF-ova"
-            else "Cloud verified · ${verified.records} records · ${verified.complete} full texts · ${verified.pdfs} PDFs"
-        } }) { Text(if (sr) "Proveri cloud arhivu" else "Verify Cloud Archive") }
+            if (sr) "Backup proveren · ${verified.records} vesti · ${verified.complete} tekstova · ${saved.pdfs} PDF-ova"
+            else "Backup verified · ${verified.records} records · ${verified.complete} full texts · ${saved.pdfs} PDFs"
+        } }) { Text(if (sr) "Napravi backup" else "Back Up Now") }
         OutlinedButton(enabled = !busy, onClick = { run { progress ->
             val restored = cloud.restore(store, progress = progress, pdfStore = pdfStore)
             if (sr) "Vraćeno $restored novih vesti · sačuvane oznake spojene"
             else "Restored $restored new articles · bookmarks merged"
         } }) { Text(if (sr) "Vrati iz clouda" else "Restore from Cloud") }
+        TextButton(onClick = { showMore = !showMore }) {
+            Text(if (sr) "Dodatne cloud radnje ${if (showMore) "⌃" else "⌄"}"
+                else "More cloud actions ${if (showMore) "⌃" else "⌄"}")
+        }
+        if (showMore) {
+        OutlinedButton(enabled = !busy, onClick = { run { progress ->
+            val verified = cloud.verify(progress)
+            if (sr) "Provereno ${verified.records} vesti" else "Checked ${verified.records} records"
+        } }) { Text(if (sr) "Proveri integritet" else "Check backup integrity") }
         TextButton(enabled = !busy, onClick = { run { progress ->
             val restored = cloud.restore(store, previous = true, progress = progress, pdfStore = pdfStore)
             if (sr) "Vraćeno $restored novih vesti iz prethodnog backupa"
             else "Restored $restored new articles from previous backup"
         } }) { Text(if (sr) "Vrati prethodni cloud backup" else "Restore previous cloud backup") }
+        }
         if (status.isNotBlank()) Text(status, color = Color(0xFFCB202B))
         Text(if (sr) "Nikada ne šalji token ili ključ za oporavak u issue ili javni log."
             else "Never post your token or recovery key in an issue or public log.", color = muted)

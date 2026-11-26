@@ -31,10 +31,14 @@ object SourceDirectory {
         FeedDirectory("plenary-tech", "Technology", "https://raw.githubusercontent.com/plenaryapp/awesome-rss-feeds/master/recommended/with_category/Tech.opml"),
         FeedDirectory("plenary-science", "Science", "https://raw.githubusercontent.com/plenaryapp/awesome-rss-feeds/master/recommended/with_category/Science.opml"),
         FeedDirectory("plenary-economy", "Business", "https://raw.githubusercontent.com/plenaryapp/awesome-rss-feeds/master/recommended/with_category/Business%20%26%20Economy.opml"),
-        FeedDirectory("plenary-us", "United States", "https://raw.githubusercontent.com/plenaryapp/awesome-rss-feeds/master/countries/with_category/United%20States.opml"),
-        FeedDirectory("independent-global", "Global briefing", "https://raw.githubusercontent.com/ajdelaguila/opml-news-feeds/main/global-briefing.opml.xml"),
-        FeedDirectory("independent-tech", "Tech & engineering", "https://raw.githubusercontent.com/ajdelaguila/opml-news-feeds/main/tech-en.opml.xml"),
+        FeedDirectory("plenary-environment", "Environment", "https://raw.githubusercontent.com/plenaryapp/awesome-rss-feeds/master/recommended/with_category/Environment.opml"),
+        FeedDirectory("plenary-books", "Books", "https://raw.githubusercontent.com/plenaryapp/awesome-rss-feeds/master/recommended/with_category/Books.opml"),
     )
+
+    fun inferredRegion(address: String): Region {
+        val host = runCatching { URI(address).host?.lowercase().orEmpty() }.getOrDefault("")
+        return if (host == "rs" || host.endsWith(".rs")) Region.SERBIA else Region.WORLD
+    }
 
     fun secureURL(raw: String): String? = runCatching {
         val value = raw.trim().replace(Regex("^http://", RegexOption.IGNORE_CASE), "https://")
@@ -84,7 +88,7 @@ object SourceDirectory {
                     val group = node.parent()?.attr("title").orEmpty().ifBlank {
                         node.parent()?.attr("text").orEmpty()
                     }
-                    DirectoryFeed(name, feed, group, Region.WORLD)
+                    DirectoryFeed(name, feed, group, inferredRegion(feed))
                 }
             }
             text.startsWith("{") || text.startsWith("[") -> {
@@ -100,14 +104,15 @@ object SourceDirectory {
                         .firstNotNullOfOrNull { key -> entry.optString(key).takeIf { it.isNotBlank() } }
                         ?: URI(feed).host
                     DirectoryFeed(name, feed, entry.optString("category", entry.optString("group")),
-                        if (entry.optString("section") == "serbia") Region.SERBIA else Region.WORLD)
+                        if (entry.optString("section").equals("serbia", ignoreCase = true))
+                            Region.SERBIA else inferredRegion(feed))
                 }
             }
             else -> text.lines().mapNotNull { line ->
                 val raw = line.trim()
                 if (raw.startsWith("#") || !raw.startsWith("http")) return@mapNotNull null
                 val feed = secureURL(raw) ?: return@mapNotNull null
-                DirectoryFeed(URI(feed).host, feed, "", Region.WORLD)
+                DirectoryFeed(URI(feed).host, feed, "", inferredRegion(feed))
             }
         }
         return entries.distinctBy { it.feedURL.lowercase() }.take(1500)
@@ -164,6 +169,7 @@ fun SourceDirectoryScreen(sr: Boolean, settings: SettingsStore, context: Context
     var customName by remember { mutableStateOf("") }
     var customURL by remember { mutableStateOf("") }
     var installedFeeds by remember { mutableStateOf<Set<String>>(settings.allSources().map { it.feed }.toSet()) }
+    val regionOverrides = remember { mutableStateMapOf<String, Region>() }
     val scope = rememberCoroutineScope()
 
     fun refresh(directory: FeedDirectory) {
@@ -226,13 +232,29 @@ fun SourceDirectoryScreen(sr: Boolean, settings: SettingsStore, context: Context
             LazyColumn(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 items(filtered, key = { it.feedURL }) { feed ->
                     val installed = feed.feedURL in installedFeeds
+                    var regionExpanded by remember(feed.feedURL) { mutableStateOf(false) }
                     Row(Modifier.fillMaxWidth().padding(vertical = 7.dp), verticalAlignment = Alignment.CenterVertically) {
                         Column(Modifier.weight(1f)) {
                             Text(feed.name, color = foreground)
                             if (feed.group.isNotBlank()) Text(feed.group, color = muted)
                         }
+                        if (!installed) Box {
+                            TextButton(onClick = { regionExpanded = true },
+                                contentPadding = PaddingValues(horizontal = 4.dp)) {
+                                Text((if ((regionOverrides[feed.feedURL] ?: feed.region) == Region.SERBIA)
+                                    (if (sr) "Srbija" else "Serbia") else (if (sr) "Svet" else "World")) + " ⌄",
+                                    color = muted, style = MaterialTheme.typography.labelSmall)
+                            }
+                            DropdownMenu(expanded = regionExpanded, onDismissRequest = { regionExpanded = false }) {
+                                listOf(Region.SERBIA, Region.WORLD).forEach { region ->
+                                    DropdownMenuItem(text = { Text(if (region == Region.SERBIA)
+                                        (if (sr) "Srbija" else "Serbia") else (if (sr) "Svet" else "World")) },
+                                        onClick = { regionOverrides[feed.feedURL] = region; regionExpanded = false })
+                                }
+                            }
+                        }
                         TextButton(enabled = !installed, onClick = {
-                            settings.addSource(feed.name, feed.feedURL, feed.region)
+                            settings.addSource(feed.name, feed.feedURL, regionOverrides[feed.feedURL] ?: feed.region)
                             installedFeeds = installedFeeds + feed.feedURL
                             onAdded()
                         }) { Text(if (installed) "✓" else "+") }

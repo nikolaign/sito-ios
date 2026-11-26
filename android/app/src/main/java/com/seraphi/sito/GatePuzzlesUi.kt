@@ -68,17 +68,30 @@ private fun EchoPuzzle(sr: Boolean, solved: () -> Unit) {
     var pattern by remember { mutableStateOf(List(7) { (0..3).random() }) }
     val attempt = remember { mutableStateListOf<Int>() }
     var visible by remember { mutableStateOf(true) }
+    var revealIndex by remember { mutableIntStateOf(-1) }
     var signal by remember { mutableIntStateOf(0) }
     var mistake by remember { mutableStateOf(false) }
-    LaunchedEffect(round, signal) { visible = true; delay(if (round == 0) 5000 else 5500); visible = false }
+    LaunchedEffect(round, signal) {
+        visible = true
+        revealIndex = -1
+        delay(550)
+        for (index in pattern.indices) {
+            revealIndex = index
+            delay(470)
+            revealIndex = -1
+            delay(150)
+        }
+        visible = false
+    }
     Column(verticalArrangement = Arrangement.spacedBy(15.dp), horizontalAlignment = Alignment.CenterHorizontally) {
         PuzzleTitle(if (sr) "ODJEK" else "THE ECHO",
-            if (sr) "Zapamti niz. Svaki sledeći odjek dodaje jedan znak."
-            else "Remember the sequence. Each echo adds one more sign.")
+            if (sr) "Znakovi dolaze jedan po jedan. Zapamti redosled, ne sliku."
+            else "The signs arrive one at a time. Remember the sequence, not an image.")
         Text("${round + 1} / 4", color = gateRed, fontFamily = FontFamily.Monospace)
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(3.dp)) {
             pattern.indices.forEach { index ->
-                Text(if (visible) gateSymbols[pattern[index]] else if (index < attempt.size) gateSymbols[attempt[index]] else "·",
+                Text(if (visible) (if (index == revealIndex) gateSymbols[pattern[index]] else "·")
+                    else if (index < attempt.size) gateSymbols[attempt[index]] else "·",
                     color = if (mistake) gateRed else gateWhite, fontSize = 17.sp, textAlign = TextAlign.Center,
                     modifier = Modifier.weight(1f))
             }

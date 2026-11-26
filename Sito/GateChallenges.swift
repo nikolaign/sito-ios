@@ -7,7 +7,9 @@ private struct MistMaze {
     let start: Int
     let exit: Int
     let seals: Set<Int>
-    static let width = 17
+    // Nine-by-nine chambers create longer false routes without making the
+    // seven-minute gate depend on guessing where the exit is.
+    static let width = 19
 
     static func make() -> MistMaze {
         func neighbours(_ tile: Int) -> [(Int, Int)] {
@@ -47,13 +49,35 @@ private struct MistMaze {
             }
         }
         let exit = distance.max(by: { $0.value < $1.value })?.key ?? start
-        let candidates = distance.filter { $0.key != start && $0.key != exit && $0.value > 24 }
+        func connections(_ tile: Int) -> [Int] {
+            let r = tile / width, c = tile % width
+            return [(-1,0),(1,0),(0,-1),(0,1)].compactMap { dr, dc in
+                let nr = r + dr, nc = c + dc
+                guard (0..<width).contains(nr), (0..<width).contains(nc) else { return nil }
+                let next = nr * width + nc
+                return open.contains(next) ? next : nil
+            }
+        }
+        func separation(_ from: Int, _ to: Int) -> Int {
+            var q = [from], seen: [Int: Int] = [from: 0], cursor = 0
+            while cursor < q.count {
+                let tile = q[cursor]; cursor += 1
+                if tile == to { return seen[tile, default: 0] }
+                for next in connections(tile) where seen[next] == nil {
+                    seen[next] = seen[tile, default: 0] + 1; q.append(next)
+                }
+            }
+            return 0
+        }
+        // Put the seals at the ends of different branches, not at arbitrary
+        // points along the same corridor. A wrong turn has a real cost.
+        let candidates = distance.filter { $0.key != start && $0.key != exit && $0.value > 20 &&
+            connections($0.key).count == 1 }
             .sorted { $0.value > $1.value }
         var seals = Set<Int>()
-        for (tile, _) in candidates.shuffled() {
+        for (tile, _) in candidates.prefix(30).shuffled() {
             if seals.count == 3 { break }
-            let r = tile / width, c = tile % width
-            if seals.allSatisfy({ abs($0/width-r) + abs($0%width-c) >= 7 }) { seals.insert(tile) }
+            if seals.allSatisfy({ separation($0, tile) >= 24 }) { seals.insert(tile) }
         }
         if seals.count < 3 {
             for (tile, _) in distance.sorted(by: { $0.value > $1.value })

@@ -165,8 +165,8 @@ struct SettingsView: View {
                     Button { importing = true } label: {
                         Label(tr("Uvezi arhivu · JSON", "Import archive · JSON"), systemImage: "square.and.arrow.down")
                     }
-                    Text(tr("Arhivu možeš šifrovano izvesti u bilo koji Files servis ili koristiti automatski Cloudflare D1. Stara istorija se može obrisati bez brisanja sačuvanih članaka; JSON i PDF izvoz ostaju zasebno.",
-                            "Export an encrypted archive to any Files destination, or use automatic Cloudflare D1 backup. Old history can be cleaned without touching saved articles; JSON and PDF exports remain available."))
+                    Text(tr("Arhivu možeš šifrovano sačuvati bilo gde ili podesiti sopstveni Cloudflare backup. Dodatne radnje su sklopljene dok ti ne zatrebaju.",
+                            "Save an encrypted archive anywhere, or connect your own Cloudflare backup. Extra controls stay tucked away until you need them."))
                         .font(.footnote).foregroundStyle(.secondary)
                     }
                 }

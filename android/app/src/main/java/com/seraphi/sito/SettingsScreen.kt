@@ -44,12 +44,16 @@ internal fun SettingsScreen(
     val context = LocalContext.current
 
     if (showCloud) {
-        CloudVaultScreen(context, archive, sr, foreground, muted, onBack = { showCloud = false })
+        CloudVaultScreen(context, archive, sr, foreground, muted, onBack = {
+            showCloud = false; showArchiveTools = true
+        })
         return
     }
     if (showArchiveTools) {
         ArchiveToolsScreen(context, archive, sr, foreground, muted,
-            onBack = { showArchiveTools = false })
+            onBack = { showArchiveTools = false }, onCloud = {
+                showArchiveTools = false; showCloud = true
+            })
         return
     }
     if (showCatalogue) {
@@ -147,9 +151,6 @@ internal fun SettingsScreen(
             }
             TextButton(onClick = { showArchiveTools = true }) {
                 Text(if (sr) "Arhiva, dopuna teksta i backup" else "Archive, complete texts & backup")
-            }
-            TextButton(onClick = { showCloud = true }) {
-                Text(if (sr) "Privatni Cloudflare backup" else "Private Cloudflare backup")
             }
         }
         HorizontalDivider(color = muted.copy(alpha = 0.2f))
