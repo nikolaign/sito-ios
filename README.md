@@ -1,6 +1,6 @@
 # SITO
 
-A quiet news reader for iPhone, built around the simple idea that reading the news should feel like reading, not fighting an interface.
+A quiet news reader for iPhone and Android, built around the simple idea that reading the news should feel like reading, not fighting an interface.
 
 SITO brings together reporting from Serbia and around the world. You choose the publishers, the topics and how much you want to see. The default layout uses comfortable, book-like typography, with a compact view when you just want to scan the headlines.
 
@@ -10,7 +10,7 @@ SITO brings together reporting from Serbia and around the world. You choose the 
 - Serbian and English interface, light and dark themes, and two scrolling styles.
 - Topic filters and the option to follow a single publisher at a time.
 - Built-in RSS/Atom/JSON Feed support, plus a searchable directory of feeds you can add with one tap. You can bring your own OPML, JSON or text directory, too.
-- Articles opened at the original publisher's website, with Safari Reader requested where available.
+- Articles opened at the original publisher's website. iOS requests Safari Reader when available; Android offers a darkened WebView.
 - Bookmarks, searchable local history and optional offline PDFs.
 - An encrypted portable backup you can save wherever you like, or an optional self-hosted Cloudflare D1 backup.
 
@@ -24,11 +24,13 @@ The optional directory also uses community-maintained feed lists from [Plenary](
 
 There are no SITO accounts, ads or analytics. Normal reading needs no SITO server. The app connects to the news sites and directories you use; cloud backup is entirely optional and uses your own account.
 
-History is stored on your iPhone in SQLite. SITO keeps available article text and metadata without downloading images into the regular archive. Some publishers only provide previews or block extraction, so **a saved record isn't always a complete article**. If you need an original page with images, save it manually as a PDF. Backups are encrypted on the phone before being shared or uploaded. Keep the recovery key somewhere safe.
+History is stored on your phone in SQLite. SITO keeps available article text and metadata without downloading images into the regular archive. Some publishers only provide previews or block extraction, so **a saved record isn't always a complete article**. If you need an original page with images, save it manually as a PDF. On Android, use the system's **Save as PDF** print destination, then **Attach PDF** to include it in SITO's archive and backup. Backups are encrypted on the phone before being shared or uploaded. Keep the recovery key somewhere safe.
 
 More detail: [backup and restore](BACKUP.md) · [set up your own Cloudflare archive](cloudflare/README.md).
 
 ## Build it
+
+### iOS
 
 You'll need a Mac with Xcode 15.4 or later. SITO targets **iOS 17+**.
 
@@ -43,6 +45,18 @@ For an unsigned IPA intended for a compatible sideloading setup such as LiveCont
 ```
 
 The resulting file is `build/SITO-0.9.4-unsigned.ipa`. It is **not** an App Store or normally signed iOS package.
+
+### Android
+
+The Android project is in `android/` and supports Android 8.0+. Clone with `git clone --recurse-submodules` (the included LZFSE decoder reads iOS backups), then open that directory in Android Studio with JDK 17. You can also install Android SDK 36 and Gradle 8.13 and run:
+
+```bash
+gradle -p android :app:assembleDebug
+```
+
+The installable test APK appears at `android/app/build/outputs/apk/debug/app-debug.apk`. Debug APKs are signed with the builder's debug certificate; for a distributable release with seamless future updates, use your own persistent release signing key. Android builds are checked in GitHub Actions on emulators.
+
+On a Mac with Gradle and the Android SDK already installed, you can also double-click `build-apk.command`; it copies the APK into `build/` for easy access.
 
 You can also download unsigned IPAs from [Releases](https://github.com/nikolaign/sito-ios/releases) when a tagged build succeeds. For maintainers, the **iOS unsigned IPA** workflow can be run manually from GitHub Actions; creating a matching `v0.9.4` tag builds and publishes a release automatically.
 

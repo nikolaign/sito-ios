@@ -99,12 +99,14 @@ private fun SitoRoot() {
     var topic by remember { mutableStateOf(Topic.ALL) }
     var sourceFilter by remember { mutableStateOf<String?>(null) }
     var reader by remember { mutableStateOf<Article?>(null) }
+    var readerOrigin by remember { mutableStateOf(Screen.FEED) }
     var pdfArticle by remember { mutableStateOf<Article?>(null) }
     val pdfs = remember { PDFStore(context.applicationContext) }
     val feed = remember { mutableStateListOf<Article>() }
     var currentSources by remember { mutableStateOf(settings.allSources()) }
     var loading by remember { mutableStateOf(false) }
     var failure by remember { mutableStateOf("") }
+    var unavailableSources by remember { mutableStateOf<Set<String>>(emptySet()) }
     var updatedAt by remember { mutableLongStateOf(0L) }
     var refreshNonce by remember { mutableIntStateOf(0) }
     var savedNonce by remember { mutableIntStateOf(0) }
@@ -141,6 +143,7 @@ private fun SitoRoot() {
         try {
             val selected = currentSources.filter { settings.enabled(it.id, it.defaultOn) }
             val report = NewsEngine.fetchAll(selected)
+            unavailableSources = report.unavailable.toSet()
             val results = report.items
             withContext(Dispatchers.IO) { archive.merge(results) }
             feed.clear()
@@ -175,7 +178,11 @@ private fun SitoRoot() {
     }
 
     BackHandler(screen != Screen.FEED) {
-        if (screen == Screen.PDF) screen = Screen.ARCHIVE else home()
+        when (screen) {
+            Screen.PDF -> screen = Screen.ARCHIVE
+            Screen.READER -> { screen = readerOrigin; reader = null }
+            else -> home()
+        }
     }
 
     MaterialTheme(
@@ -191,7 +198,8 @@ private fun SitoRoot() {
                 if (savedPDF != null) PDFReader(savedPDF, sr) { screen = Screen.ARCHIVE }
                 else LaunchedEffect(pdfArticle) { screen = Screen.ARCHIVE }
             } else if (screen == Screen.READER && reader != null) {
-                Header(label = reader!!.sourceName, isDark = isDark, onHome = { home() },
+                Header(label = reader!!.sourceName, isDark = isDark,
+                    onHome = { screen = readerOrigin; reader = null },
                     onArchive = {}, onSettings = {}, showControls = false)
                 var webView by remember(reader!!.id) { mutableStateOf<WebView?>(null) }
                 var pageReady by remember(reader!!.id) { mutableStateOf(false) }
@@ -249,12 +257,14 @@ private fun SitoRoot() {
                     onAdvanced = { advanced = it; settings.advanced = it },
                     onSourcesChanged = { currentSources = settings.allSources(); sourcesDirty = true },
                     onTopicsChanged = { topicsNonce++; if (topic !in settings.visibleTopics()) topic = Topic.ALL },
+                    unavailableSources = unavailableSources, updatedAt = updatedAt,
+                    onRetrySources = { refreshNonce++ },
                 )
             } else if (screen == Screen.ARCHIVE) {
                 Header(label = if (sr) "Arhiva" else "Archive", isDark = isDark,
                     onHome = { home() }, onArchive = {}, onSettings = {}, showControls = false)
                 ArchiveScreen(archive, sr, foreground, muted, savedNonce,
-                    onOpen = { reader = it; screen = Screen.READER },
+                    onOpen = { reader = it; readerOrigin = Screen.ARCHIVE; screen = Screen.READER },
                     onPDF = { pdfArticle = it; screen = Screen.PDF }, pdfs = pdfs,
                     onToggle = { article ->
                         archive.bookmark(article.id, !article.bookmark)
@@ -351,7 +361,7 @@ private fun SitoRoot() {
                                         else Modifier)) {
                                     StoryCardAndroid(item, compact && !paged, isDark, foreground, muted,
                                         fullHeight = paged,
-                                        onOpen = { reader = item; screen = Screen.READER },
+                                        onOpen = { reader = item; readerOrigin = Screen.FEED; screen = Screen.READER },
                                         onBookmark = { archive.bookmark(item.id, true); savedNonce++ })
                                 }
                             }

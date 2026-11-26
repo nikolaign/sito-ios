@@ -155,7 +155,9 @@ class LocalStore(context: Context) : SQLiteOpenHelper(context, "sito-history.db"
 
     @Synchronized fun cleanup(olderThan: Long, protectBookmarks: Boolean = true): Int {
         val condition = "published < ?" + if (protectBookmarks) " AND bookmark = 0" else ""
-        return writableDatabase.delete("articles", condition, arrayOf(olderThan.toString()))
+        val removed = writableDatabase.delete("articles", condition, arrayOf(olderThan.toString()))
+        if (removed > 0) writableDatabase.execSQL("VACUUM")
+        return removed
     }
 
     private fun values(item: Article) = ContentValues().apply {

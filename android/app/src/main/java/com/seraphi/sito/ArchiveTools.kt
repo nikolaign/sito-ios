@@ -119,7 +119,9 @@ fun ArchiveToolsScreen(context: Context, store: LocalStore, sr: Boolean, foregro
     var busy by remember { mutableStateOf(false) }
     var status by remember { mutableStateOf("") }
     var days by remember { mutableIntStateOf(365) }
+    var portableWithPDFs by remember { mutableStateOf(false) }
     var confirmDelete by remember { mutableStateOf(false) }
+    var confirmClearAll by remember { mutableStateOf(false) }
     val pdfs = remember { PDFStore(context.applicationContext) }
     val cloud = remember { CloudOptions(context.applicationContext) }
     val encryptedExport = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/octet-stream")) { uri: Uri? ->
@@ -130,7 +132,7 @@ fun ArchiveToolsScreen(context: Context, store: LocalStore, sr: Boolean, foregro
                 val key = android.util.Base64.decode(requireNotNull(cloud.secrets.read("recovery-key")), android.util.Base64.DEFAULT)
                 withContext(Dispatchers.IO) {
                     requireNotNull(context.contentResolver.openOutputStream(uri)).use { stream ->
-                        PortableVault.export(store, pdfs, stream, key, withPDFs = true) { status = it }
+                        PortableVault.export(store, pdfs, stream, key, withPDFs = portableWithPDFs) { status = it }
                     }
                 }
                 status = if (sr) "Šifrovani backup sačuvan" else "Encrypted backup saved"
@@ -213,6 +215,12 @@ fun ArchiveToolsScreen(context: Context, store: LocalStore, sr: Boolean, foregro
         }) { Text(if (sr) "Dopuni sledećih 40 vesti" else "Complete the next 40 articles") }
         HorizontalDivider()
         Text(if (sr) "Lokalni backup" else "Local backup", color = foreground)
+        Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
+            Text(if (sr) "Uključi i originalne PDF-ove (više prostora)"
+                else "Include original PDFs (more storage)", color = foreground,
+                modifier = Modifier.weight(1f))
+            Switch(checked = portableWithPDFs, onCheckedChange = { portableWithPDFs = it })
+        }
         OutlinedButton(enabled = !busy, onClick = {
             if (cloud.secrets.read("recovery-key") == null)
                 status = if (sr) "Prvo sačuvaj ključ za oporavak u Cloud podešavanjima"
@@ -225,8 +233,8 @@ fun ArchiveToolsScreen(context: Context, store: LocalStore, sr: Boolean, foregro
                     else "Import your recovery key in Cloud settings first"
             else encryptedImport.launch(arrayOf("application/octet-stream", "application/x-binary", "*/*"))
         }) { Text(if (sr) "Uvezi šifrovani .sitobackup" else "Import encrypted .sitobackup") }
-        Text(if (sr) "Kompatibilno sa iOS .sitobackup formatom, uključujući PDF-ove."
-            else "Compatible with iOS .sitobackup files, including PDFs.", color = muted)
+        Text(if (sr) "Kompatibilno sa iOS .sitobackup formatom. Tekst i metapodaci su uvek uključeni."
+            else "Compatible with iOS .sitobackup files. Article text and metadata are always included.", color = muted)
         OutlinedButton(enabled = !busy, onClick = { save.launch("SITO-archive.json") }) {
             Text(if (sr) "Sačuvaj JSON arhivu" else "Export archive JSON")
         }
@@ -245,6 +253,9 @@ fun ArchiveToolsScreen(context: Context, store: LocalStore, sr: Boolean, foregro
         OutlinedButton(enabled = !busy, onClick = { confirmDelete = true }) {
             Text(if (sr) "Obriši starije od $days dana" else "Delete history older than $days days")
         }
+        TextButton(enabled = !busy, onClick = { confirmClearAll = true }) {
+            Text(if (sr) "Obriši celu lokalnu arhivu" else "Clear all local history")
+        }
         Text(if (sr) "Sačuvani članci (bookmarks) neće biti obrisani."
             else "Bookmarked articles are protected.", color = muted)
         if (status.isNotBlank()) Text(status, color = Color(0xFFCB202B))
@@ -254,13 +265,42 @@ fun ArchiveToolsScreen(context: Context, store: LocalStore, sr: Boolean, foregro
         text = { Text(if (sr) "Ova radnja briše lokalnu istoriju stariju od $days dana, osim sačuvanih vesti."
             else "This removes local stories older than $days days, except bookmarks.") },
         confirmButton = { TextButton(onClick = {
-            val threshold = System.currentTimeMillis() - TimeUnit.DAYS.toMillis(days.toLong())
-            val removed = store.cleanup(threshold)
-            val pdfsRemoved = pdfs.deleteUnreferenced(store.articleIDs())
-            revision++
-            status = if (sr) "Obrisano $removed vesti i $pdfsRemoved PDF-ova"
-                else "Removed $removed stories and $pdfsRemoved PDFs"
             confirmDelete = false
+            busy = true
+            scope.launch {
+                try {
+                    val (removed, pdfsRemoved) = withContext(Dispatchers.IO) {
+                        val threshold = System.currentTimeMillis() - TimeUnit.DAYS.toMillis(days.toLong())
+                        val count = store.cleanup(threshold)
+                        count to pdfs.deleteUnreferenced(store.articleIDs())
+                    }
+                    revision++
+                    status = if (sr) "Obrisano $removed vesti i $pdfsRemoved PDF-ova"
+                        else "Removed $removed stories and $pdfsRemoved PDFs"
+                } catch (error: Exception) { status = error.localizedMessage ?: "Cleanup failed" }
+                finally { busy = false }
+            }
         }) { Text(if (sr) "Obriši" else "Delete") } },
         dismissButton = { TextButton(onClick = { confirmDelete = false }) { Text(if (sr) "Otkaži" else "Cancel") } })
+    if (confirmClearAll) AlertDialog(onDismissRequest = { confirmClearAll = false },
+        title = { Text(if (sr) "Obrisati baš sve lokalne vesti?" else "Clear the entire local archive?") },
+        text = { Text(if (sr) "Brišu se i sačuvane vesti i PDF-ovi na ovom telefonu. Cloud backup ostaje netaknut."
+            else "This removes even bookmarked stories and saved PDFs on this phone. Cloud backups are untouched.") },
+        confirmButton = { TextButton(onClick = {
+            confirmClearAll = false
+            busy = true
+            scope.launch {
+                try {
+                    val (removed, pdfsRemoved) = withContext(Dispatchers.IO) {
+                        store.cleanup(Long.MAX_VALUE, protectBookmarks = false) to
+                            pdfs.deleteUnreferenced(emptySet())
+                    }
+                    revision++
+                    status = if (sr) "Obrisano $removed vesti i $pdfsRemoved PDF-ova"
+                        else "Removed $removed stories and $pdfsRemoved PDFs"
+                } catch (error: Exception) { status = error.localizedMessage ?: "Cleanup failed" }
+                finally { busy = false }
+            }
+        }) { Text(if (sr) "Obriši sve" else "Clear everything") } },
+        dismissButton = { TextButton(onClick = { confirmClearAll = false }) { Text(if (sr) "Otkaži" else "Cancel") } })
 }

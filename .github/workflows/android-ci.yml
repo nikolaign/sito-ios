@@ -63,3 +63,27 @@ jobs:
           target: google_apis
           disable-animations: true
           script: gradle -p android :app:connectedDebugAndroidTest --no-daemon
+
+  publish-preview:
+    needs: [build, device-smoke]
+    if: github.event_name == 'push' && startsWith(github.event.head_commit.message, 'Publish Android preview')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          name: sito-android-development-apk
+          path: output
+      - name: Publish tested Android APK beside the iOS IPA
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: nikolaign/sito-ios
+        shell: bash
+        run: |
+          cp output/app-debug.apk SITO-0.9.4-android-preview.apk
+          unzip -tq SITO-0.9.4-android-preview.apk
+          sha256sum SITO-0.9.4-android-preview.apk
+          gh release upload v0.9.4 SITO-0.9.4-android-preview.apk --clobber
+          existing="$(gh release view v0.9.4 --json body --jq .body)"
+          printf '%s\n\nAndroid preview: install SITO-0.9.4-android-preview.apk on Android 8.0+. This is a debug-signed test package, not a Play Store release; switching build signatures requires uninstalling the old preview before installing a new one.\n' "$existing" | gh release edit v0.9.4 --notes-file -

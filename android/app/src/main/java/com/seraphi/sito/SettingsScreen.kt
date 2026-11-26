@@ -27,6 +27,8 @@ internal fun SettingsScreen(
     onCompact: (Boolean) -> Unit, onPaged: (Boolean) -> Unit, onAdvanced: (Boolean) -> Unit,
     onSourcesChanged: () -> Unit,
     onTopicsChanged: () -> Unit,
+    unavailableSources: Set<String>, updatedAt: Long,
+    onRetrySources: () -> Unit,
 ) {
     var showSources by remember { mutableStateOf(false) }
     var showAdd by remember { mutableStateOf(false) }
@@ -35,6 +37,7 @@ internal fun SettingsScreen(
     var newRegion by remember { mutableStateOf(Region.WORLD) }
     var error by remember { mutableStateOf("") }
     var showTopics by remember { mutableStateOf(false) }
+    var showStatus by remember { mutableStateOf(false) }
     var showCatalogue by remember { mutableStateOf(false) }
     var showArchiveTools by remember { mutableStateOf(false) }
     var showCloud by remember { mutableStateOf(false) }
@@ -124,6 +127,21 @@ internal fun SettingsScreen(
             Switch(checked = advanced, onCheckedChange = onAdvanced)
         }
         if (advanced) {
+            TextButton(onClick = { showStatus = !showStatus }) {
+                Text(if (sr) "Status izvora" else "Source status")
+            }
+            if (showStatus) {
+                val enabledCount = currentSources.count { settings.enabled(it.id, it.defaultOn) }
+                val availableCount = (enabledCount - unavailableSources.size).coerceAtLeast(0)
+                Text(if (updatedAt == 0L) (if (sr) "Izvori još nisu provereni" else "Sources not checked yet")
+                    else (if (sr) "Dostupno: $availableCount od $enabledCount"
+                        else "Available: $availableCount of $enabledCount"), color = muted)
+                if (unavailableSources.isNotEmpty()) Text(unavailableSources.sorted().joinToString(" · "),
+                    color = Color(0xFFCB202B), fontSize = 12.sp)
+                TextButton(onClick = onRetrySources) {
+                    Text(if (sr) "Ponovo proveri izvore" else "Retry sources")
+                }
+            }
             TextButton(onClick = { showCatalogue = true }) {
                 Text(if (sr) "Istraži kataloge RSS izvora" else "Explore RSS source catalogues")
             }
@@ -177,10 +195,12 @@ internal fun SettingsScreen(
             },
             confirmButton = {
                 TextButton(onClick = {
-                    if (newName.isBlank() || !newURL.trim().startsWith("https://")) {
-                        error = "Please enter a name and an HTTPS feed URL"
+                    val secure = SourceDirectory.secureURL(newURL)
+                    if (newName.isBlank() || secure == null) {
+                        error = if (sr) "Unesi naziv i ispravnu HTTPS adresu izvora"
+                            else "Enter a name and valid HTTPS feed URL"
                     } else {
-                        settings.addSource(newName.trim(), newURL.trim(), newRegion)
+                        settings.addSource(newName.trim(), secure, newRegion)
                         newName = ""; newURL = ""; error = ""
                         showAdd = false
                         onSourcesChanged()
