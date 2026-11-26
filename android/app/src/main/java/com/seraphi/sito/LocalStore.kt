@@ -8,14 +8,16 @@ import android.database.sqlite.SQLiteOpenHelper
 import org.json.JSONArray
 import org.json.JSONObject
 
-class LocalStore(context: Context) : SQLiteOpenHelper(context, "sito-history.db", null, 2) {
+class LocalStore(context: Context) : SQLiteOpenHelper(context, "sito-history.db", null, 3) {
     override fun onCreate(db: SQLiteDatabase) {
         db.execSQL("""CREATE TABLE articles (
             id TEXT PRIMARY KEY, source_id TEXT NOT NULL, source_name TEXT NOT NULL,
             region TEXT NOT NULL, title TEXT NOT NULL, summary TEXT NOT NULL,
             url TEXT NOT NULL, image TEXT, published INTEGER NOT NULL,
             categories TEXT NOT NULL, author TEXT, full_text TEXT, bookmark INTEGER NOT NULL DEFAULT 0,
-            text_checked INTEGER, text_origin TEXT, preview_text TEXT
+            text_checked INTEGER, text_origin TEXT, preview_text TEXT,
+            source_status TEXT, canonical_url TEXT, language_code TEXT,
+            modified_at INTEGER, text_captured INTEGER
         )""")
         db.execSQL("CREATE INDEX history_date ON articles(published DESC)")
     }
@@ -26,6 +28,13 @@ class LocalStore(context: Context) : SQLiteOpenHelper(context, "sito-history.db"
             db.execSQL("ALTER TABLE articles ADD COLUMN text_origin TEXT")
             db.execSQL("ALTER TABLE articles ADD COLUMN preview_text TEXT")
         }
+        if (oldVersion < 3) {
+            db.execSQL("ALTER TABLE articles ADD COLUMN source_status TEXT")
+            db.execSQL("ALTER TABLE articles ADD COLUMN canonical_url TEXT")
+            db.execSQL("ALTER TABLE articles ADD COLUMN language_code TEXT")
+            db.execSQL("ALTER TABLE articles ADD COLUMN modified_at INTEGER")
+            db.execSQL("ALTER TABLE articles ADD COLUMN text_captured INTEGER")
+        }
     }
 
     @Synchronized fun merge(articles: List<Article>) {
@@ -33,20 +42,26 @@ class LocalStore(context: Context) : SQLiteOpenHelper(context, "sito-history.db"
         try {
             for (item in articles) {
                 val previous = writableDatabase.rawQuery(
-                    "SELECT full_text, bookmark, text_checked, text_origin FROM articles WHERE id = ?", arrayOf(item.id)
-                ).use { cursor ->
-                    if (!cursor.moveToFirst()) null
-                    else Triple(cursor.getString(0), cursor.getInt(1) != 0,
-                        (if (cursor.isNull(2)) null else cursor.getLong(2)) to cursor.getString(3))
-                }
-                val olderText = previous?.first
+                    "SELECT * FROM articles WHERE id = ?", arrayOf(item.id)
+                ).use { cursor -> if (cursor.moveToFirst()) cursor.article() else null }
+                val olderText = previous?.fullText
+                val prefersNewText = item.fullText != null && item.fullText.length >= (olderText?.length ?: 0)
                 val merged = item.copy(
-                    bookmark = item.bookmark || previous?.second == true,
+                    bookmark = item.bookmark || previous?.bookmark == true,
                     fullText = item.fullText?.takeIf { it.length >= (olderText?.length ?: 0) }
                         ?: olderText,
-                    textCheckedAt = item.textCheckedAt ?: previous?.third?.first,
-                    textOrigin = if (item.fullText != null && item.fullText.length >= (olderText?.length ?: 0))
-                        item.textOrigin else previous?.third?.second,
+                    textCheckedAt = item.textCheckedAt ?: previous?.textCheckedAt,
+                    textOrigin = if (prefersNewText) item.textOrigin else previous?.textOrigin,
+                    textCapturedAt = if (prefersNewText) item.textCapturedAt else previous?.textCapturedAt,
+                    summary = item.summary.ifBlank { previous?.summary.orEmpty() },
+                    image = item.image ?: previous?.image,
+                    categories = item.categories.ifEmpty { previous?.categories.orEmpty() },
+                    author = item.author ?: previous?.author,
+                    previewText = item.previewText ?: previous?.previewText,
+                    sourceStatus = item.sourceStatus ?: previous?.sourceStatus,
+                    canonicalURL = item.canonicalURL ?: previous?.canonicalURL,
+                    languageCode = item.languageCode ?: previous?.languageCode,
+                    modifiedAt = item.modifiedAt ?: previous?.modifiedAt,
                 )
                 writableDatabase.insertWithOnConflict("articles", null, values(merged), SQLiteDatabase.CONFLICT_REPLACE)
             }
@@ -71,6 +86,16 @@ class LocalStore(context: Context) : SQLiteOpenHelper(context, "sito-history.db"
         }
     }
 
+    /** Backups must include every row, even when the history UI is capped. */
+    @Synchronized fun allArticles(): List<Article> = readableDatabase.query(
+        "articles", null, null, null, null, null, "published DESC").use { cursor ->
+        buildList { while (cursor.moveToNext()) add(cursor.article()) }
+    }
+
+    @Synchronized fun completeCount(): Int = readableDatabase.rawQuery(
+        "SELECT COUNT(*) FROM articles WHERE full_text IS NOT NULL AND LENGTH(full_text) >= 500", null
+    ).use { if (it.moveToFirst()) it.getInt(0) else 0 }
+
     private fun Cursor.article(): Article {
         fun text(key: String): String? = getColumnIndex(key).takeIf { it >= 0 }?.let { index ->
             if (isNull(index)) null else getString(index)
@@ -86,11 +111,19 @@ class LocalStore(context: Context) : SQLiteOpenHelper(context, "sito-history.db"
             author = text("author"), fullText = text("full_text"),
             bookmark = getInt(getColumnIndexOrThrow("bookmark")) != 0,
             textCheckedAt = text("text_checked")?.toLongOrNull(),
-            textOrigin = text("text_origin"), previewText = text("preview_text"))
+            textOrigin = text("text_origin"), previewText = text("preview_text"),
+            sourceStatus = text("source_status"), canonicalURL = text("canonical_url"),
+            languageCode = text("language_code"), modifiedAt = text("modified_at")?.toLongOrNull(),
+            textCapturedAt = text("text_captured")?.toLongOrNull())
     }
 
     @Synchronized fun count(): Int = readableDatabase.rawQuery("SELECT COUNT(*) FROM articles", null).use {
         if (it.moveToFirst()) it.getInt(0) else 0
+    }
+
+    @Synchronized fun articleIDs(): Set<String> = readableDatabase.rawQuery(
+        "SELECT id FROM articles", null).use { cursor ->
+        buildSet { while (cursor.moveToNext()) add(cursor.getString(0)) }
     }
 
     @Synchronized fun byId(id: String): Article? = readableDatabase.query("articles", null,
@@ -109,6 +142,7 @@ class LocalStore(context: Context) : SQLiteOpenHelper(context, "sito-history.db"
             if (result.text != null) {
                 put("full_text", result.text)
                 put("text_origin", "original")
+                put("text_captured", System.currentTimeMillis())
                 if (!result.byline.isNullOrBlank()) put("author", result.byline)
             }
         }
@@ -141,6 +175,11 @@ class LocalStore(context: Context) : SQLiteOpenHelper(context, "sito-history.db"
         put("text_checked", item.textCheckedAt)
         put("text_origin", item.textOrigin)
         put("preview_text", item.previewText)
+        put("source_status", item.sourceStatus)
+        put("canonical_url", item.canonicalURL)
+        put("language_code", item.languageCode)
+        put("modified_at", item.modifiedAt)
+        put("text_captured", item.textCapturedAt)
     }
 }
 

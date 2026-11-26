@@ -79,4 +79,36 @@ class NewsEngineTest {
         assertEquals(1, items.size)
         assertEquals("raspad|c-OK", items.single().id)
     }
+
+    @Test fun encryptedArchiveIsAuthenticated() {
+        assertEquals("ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad",
+            VaultCipher.sha256("abc".toByteArray()))
+        val key = ByteArray(32) { it.toByte() }
+        val plain = "Private story contents, never uploaded in the clear".toByteArray()
+        val aad = "SITO-portable-PDF-v1:test".toByteArray()
+        val encrypted = VaultCipher.encrypt(plain, key, aad)
+        assertArrayEquals(plain, VaultCipher.decrypt(encrypted, key, aad))
+        assertThrows(IllegalStateException::class.java) {
+            VaultCipher.decrypt(encrypted, key, "other article".toByteArray())
+        }
+        assertThrows(IllegalStateException::class.java) {
+            VaultCipher.decrypt(encrypted, ByteArray(32), aad)
+        }
+    }
+
+    @Test fun archiveRetainsOptionalSwiftMetadata() {
+        val item = Article("publisher|story", "publisher", "Publisher", Region.WORLD,
+            "Article title", "An RSS preview", "https://example.org/story", null,
+            1795600000000, fullText = "This is a full article. ".repeat(40),
+            textOrigin = "original", author = "Reporter",
+            sourceStatus = "confirmed", canonicalURL = "https://example.org/canonical",
+            languageCode = "en", modifiedAt = 1795600001000, textCapturedAt = 1795600005000)
+        val restored = VaultJSON.decode(VaultJSON.encode(item))
+        assertEquals(item.id, restored.id)
+        assertEquals(item.fullText, restored.fullText)
+        assertEquals(item.canonicalURL, restored.canonicalURL)
+        assertEquals(item.sourceStatus, restored.sourceStatus)
+        assertEquals(item.modifiedAt, restored.modifiedAt)
+        assertEquals(item.textCapturedAt, restored.textCapturedAt)
+    }
 }

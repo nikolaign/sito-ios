@@ -320,6 +320,11 @@ class CloudArchive(private val options: CloudOptions) {
             categories = primary.categories.ifEmpty { other.categories },
             previewText = primary.previewText ?: other.previewText,
             textCheckedAt = maxOf(a.textCheckedAt ?: 0L, b.textCheckedAt ?: 0L).takeIf { it > 0 },
+            textCapturedAt = primary.textCapturedAt ?: other.textCapturedAt,
+            sourceStatus = primary.sourceStatus ?: other.sourceStatus,
+            canonicalURL = primary.canonicalURL ?: other.canonicalURL,
+            languageCode = primary.languageCode ?: other.languageCode,
+            modifiedAt = maxOf(a.modifiedAt ?: 0L, b.modifiedAt ?: 0L).takeIf { it > 0 },
         )
     }
 
@@ -330,7 +335,7 @@ class CloudArchive(private val options: CloudOptions) {
         val cloud = prior?.let { readChunks(api, key, it, progress) }.orEmpty()
         val union = linkedMapOf<String, Article>()
         cloud.forEach { union[it.id] = it }
-        store.archive().forEach { local ->
+        store.allArticles().forEach { local ->
             union[local.id] = union[local.id]?.let { richer(local, it) } ?: local
         }
         // Existing bookmarks and PDFs survive every upload, even if local
@@ -433,24 +438,30 @@ class CloudArchive(private val options: CloudOptions) {
         val merged = articles.map { item ->
             marks[item.id]?.let { richer(item.copy(bookmark = true), it) } ?: item
         } + content.bookmarks.filterNot { marks -> articles.any { it.id == marks.id } }
-        val pdfStages = mutableListOf<Pair<String, ByteArray>>()
-        if (pdfStore != null) {
-            val validIDs = merged.map { it.id }.toHashSet()
-            for (index in 0 until content.pdfs.length()) {
-                val pdf = content.pdfs.getJSONObject(index)
-                val id = pdf.getString("id")
-                if (id !in validIDs) continue
-                progress("Downloading PDF · ${index + 1}/${content.pdfs.length()}")
-                val bytes = VaultCipher.decrypt(api.getObject(pdf.getString("object")), key)
-                require(bytes.size >= 5 && bytes.size < 35_000_000 &&
-                    bytes.copyOfRange(0, 5).contentEquals("%PDF-".toByteArray())) { "Invalid cloud PDF" }
-                pdfStages += id to bytes
+        val pdfStages = mutableListOf<Pair<String, java.io.File>>()
+        try {
+            if (pdfStore != null) {
+                val validIDs = merged.map { it.id }.toHashSet()
+                for (index in 0 until content.pdfs.length()) {
+                    val pdf = content.pdfs.getJSONObject(index)
+                    val id = pdf.getString("id")
+                    if (id !in validIDs) continue
+                    progress("Downloading PDF · ${index + 1}/${content.pdfs.length()}")
+                    val bytes = VaultCipher.decrypt(api.getObject(pdf.getString("object")), key)
+                    require(bytes.size >= 5 && bytes.size < 35_000_000 &&
+                        bytes.copyOfRange(0, 5).contentEquals("%PDF-".toByteArray())) { "Invalid cloud PDF" }
+                    val file = pdfStore.temporary()
+                    pdfStages += id to file
+                    file.writeBytes(bytes)
+                }
             }
+            val before = store.count()
+            store.merge(merged)
+            pdfStages.forEach { (id, file) -> pdfStore?.save(id, file.readBytes()) }
+            store.count() - before
+        } finally {
+            pdfStages.forEach { (_, file) -> file.delete() }
         }
-        val before = store.count()
-        store.merge(merged)
-        pdfStages.forEach { (id, bytes) -> pdfStore?.save(id, bytes) }
-        store.count() - before
     }
 }
 
@@ -471,7 +482,12 @@ internal object VaultJSON {
         item.fullText?.takeIf { item.hasFullText() }?.let { put("fullText", it) }
         item.textOrigin?.let { put("textOrigin", it) }
         item.textCheckedAt?.let { put("textCheckedAt", swiftDate(it)) }
+        item.textCapturedAt?.let { put("textCapturedAt", swiftDate(it)) }
         item.previewText?.let { put("previewText", it) }
+        item.sourceStatus?.let { put("sourceStatus", it) }
+        item.canonicalURL?.let { put("canonicalURL", it) }
+        item.languageCode?.let { put("languageCode", it) }
+        item.modifiedAt?.let { put("modifiedAt", swiftDate(it)) }
     }
 
     fun decode(json: JSONObject, bookmark: Boolean = false): Article = Article(
@@ -488,7 +504,14 @@ internal object VaultJSON {
         bookmark = bookmark, textOrigin = json.optString("textOrigin").takeIf { it.isNotBlank() },
         textCheckedAt = if (json.has("textCheckedAt") && !json.isNull("textCheckedAt"))
             androidDate(json.getDouble("textCheckedAt")) else null,
-        previewText = json.optString("previewText").takeIf { it.isNotBlank() })
+        previewText = json.optString("previewText").takeIf { it.isNotBlank() },
+        sourceStatus = json.optString("sourceStatus").takeIf { it.isNotBlank() },
+        canonicalURL = json.optString("canonicalURL").takeIf { it.isNotBlank() },
+        languageCode = json.optString("languageCode").takeIf { it.isNotBlank() },
+        modifiedAt = if (json.has("modifiedAt") && !json.isNull("modifiedAt"))
+            androidDate(json.getDouble("modifiedAt")) else null,
+        textCapturedAt = if (json.has("textCapturedAt") && !json.isNull("textCapturedAt"))
+            androidDate(json.getDouble("textCapturedAt")) else null)
 
     fun decodeArticles(bytes: ByteArray): List<Article> {
         val array = JSONArray(String(bytes, Charsets.UTF_8))

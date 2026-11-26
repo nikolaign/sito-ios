@@ -20,6 +20,12 @@ class PDFStore(private val context: Context) {
     fun temporary(): File = File.createTempFile("sito-import-", ".pdf", context.cacheDir)
     fun read(id: String): ByteArray? = path(id).takeIf { it.isFile }?.readBytes()
     fun totalBytes(): Long = folder.listFiles()?.sumOf { it.length() } ?: 0L
+    fun deleteUnreferenced(validIDs: Set<String>): Int {
+        val retained = validIDs.mapTo(hashSetOf()) { VaultCipher.sha256(it.toByteArray()) + ".pdf" }
+        return folder.listFiles()?.count { file ->
+            file.isFile && file.extension == "pdf" && file.name !in retained && file.delete()
+        } ?: 0
+    }
     fun save(id: String, bytes: ByteArray) {
         require(bytes.size in 5 until 35_000_000 && bytes.copyOfRange(0, 5)
             .contentEquals("%PDF-".toByteArray())) { "Invalid PDF" }
@@ -58,7 +64,7 @@ object PortableVault {
 
     suspend fun export(store: LocalStore, pdfs: PDFStore, output: OutputStream,
                        key: ByteArray, withPDFs: Boolean, progress: (String) -> Unit) = withContext(Dispatchers.IO) {
-        val articles = store.archive()
+        val articles = store.allArticles()
         val attachments = if (withPDFs) articles.filter { pdfs.contains(it.id) } else emptyList()
         val metadata = JSONObject().apply {
             put("version", 1)

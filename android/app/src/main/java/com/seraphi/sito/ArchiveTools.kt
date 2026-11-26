@@ -48,7 +48,7 @@ object ArchiveTools {
     // credentials. Cloud / encrypted portable backups are a separate feature.
     fun exportJSON(store: LocalStore): ByteArray {
         val articles = JSONArray()
-        for (item in store.archive()) {
+        for (item in store.allArticles()) {
             articles.put(JSONObject().apply {
                 put("id", item.id); put("sourceID", item.sourceID); put("sourceName", item.sourceName)
                 put("section", item.region.name.lowercase()); put("title", item.title)
@@ -60,6 +60,11 @@ object ArchiveTools {
                 put("textOrigin", item.textOrigin ?: JSONObject.NULL)
                 put("textCheckedAtMillis", item.textCheckedAt ?: JSONObject.NULL)
                 put("previewText", item.previewText ?: JSONObject.NULL)
+                put("sourceStatus", item.sourceStatus ?: JSONObject.NULL)
+                put("canonicalURL", item.canonicalURL ?: JSONObject.NULL)
+                put("languageCode", item.languageCode ?: JSONObject.NULL)
+                put("modifiedAtMillis", item.modifiedAt ?: JSONObject.NULL)
+                put("textCapturedAtMillis", item.textCapturedAt ?: JSONObject.NULL)
                 put("bookmark", item.bookmark)
             })
         }
@@ -91,7 +96,12 @@ object ArchiveTools {
                 bookmark = item.optBoolean("bookmark"),
                 textCheckedAt = item.optLong("textCheckedAtMillis", 0).takeIf { it > 0 },
                 textOrigin = item.optString("textOrigin").ifBlank { null },
-                previewText = item.optString("previewText").ifBlank { null })
+                previewText = item.optString("previewText").takeIf { it.isNotBlank() && it != "null" },
+                sourceStatus = item.optString("sourceStatus").takeIf { it.isNotBlank() && it != "null" },
+                canonicalURL = item.optString("canonicalURL").takeIf { it.isNotBlank() && it != "null" },
+                languageCode = item.optString("languageCode").takeIf { it.isNotBlank() && it != "null" },
+                modifiedAt = item.optLong("modifiedAtMillis", 0).takeIf { it > 0 },
+                textCapturedAt = item.optLong("textCapturedAtMillis", 0).takeIf { it > 0 })
         }
         val before = store.count()
         store.merge(entries)
@@ -105,7 +115,7 @@ fun ArchiveToolsScreen(context: Context, store: LocalStore, sr: Boolean, foregro
     val scope = rememberCoroutineScope()
     var revision by remember { mutableIntStateOf(0) }
     val articles = remember(revision) { store.count() }
-    val complete = remember(revision) { store.archive().count { it.hasFullText() } }
+    val complete = remember(revision) { store.completeCount() }
     var busy by remember { mutableStateOf(false) }
     var status by remember { mutableStateOf("") }
     var days by remember { mutableIntStateOf(365) }
@@ -246,8 +256,10 @@ fun ArchiveToolsScreen(context: Context, store: LocalStore, sr: Boolean, foregro
         confirmButton = { TextButton(onClick = {
             val threshold = System.currentTimeMillis() - TimeUnit.DAYS.toMillis(days.toLong())
             val removed = store.cleanup(threshold)
+            val pdfsRemoved = pdfs.deleteUnreferenced(store.articleIDs())
             revision++
-            status = if (sr) "Obrisano $removed vesti" else "Removed $removed stories"
+            status = if (sr) "Obrisano $removed vesti i $pdfsRemoved PDF-ova"
+                else "Removed $removed stories and $pdfsRemoved PDFs"
             confirmDelete = false
         }) { Text(if (sr) "Obriši" else "Delete") } },
         dismissButton = { TextButton(onClick = { confirmDelete = false }) { Text(if (sr) "Otkaži" else "Cancel") } })

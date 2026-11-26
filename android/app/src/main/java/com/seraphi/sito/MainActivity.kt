@@ -8,6 +8,8 @@ import android.net.NetworkCapabilities
 import android.webkit.WebView
 import android.webkit.WebViewClient
 import androidx.activity.ComponentActivity
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
 import androidx.webkit.WebSettingsCompat
@@ -30,6 +32,7 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material3.*
+import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -192,30 +195,46 @@ private fun SitoRoot() {
                     onArchive = {}, onSettings = {}, showControls = false)
                 var webView by remember(reader!!.id) { mutableStateOf<WebView?>(null) }
                 var pageReady by remember(reader!!.id) { mutableStateOf(false) }
-                var saving by remember { mutableStateOf(false) }
                 var readerStatus by remember { mutableStateOf("") }
+                val attachPDF = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+                    if (uri != null) {
+                        val selected = reader
+                        if (selected != null) scope.launch {
+                            try {
+                                withContext(Dispatchers.IO) {
+                                    val data = requireNotNull(context.contentResolver.openInputStream(uri))
+                                        .use { it.readNBytes(35_000_001) }
+                                    pdfs.save(selected.id, data)
+                                }
+                                readerStatus = if (sr) "PDF dodat u arhivu" else "PDF added to archive"
+                            } catch (failure: Exception) {
+                                readerStatus = failure.localizedMessage ?: "Could not import PDF"
+                            }
+                        }
+                    }
+                }
                 key(reader!!.id) {
                     ArticleBrowser(reader!!, isDark, Modifier.weight(1f),
                         onView = { webView = it }, onReady = { pageReady = true })
                 }
                 Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 3.dp),
                     verticalAlignment = Alignment.CenterVertically) {
-                    TextButton(enabled = pageReady && !saving, onClick = {
+                    TextButton(enabled = pageReady, onClick = {
                         val view = webView ?: return@TextButton
-                        saving = true
-                        scope.launch {
-                            try {
-                                saveOriginalPDF(view, reader!!, pdfs)
-                                readerStatus = if (sr) "PDF je sačuvan" else "Full PDF saved"
-                            } catch (failure: Exception) {
-                                readerStatus = failure.localizedMessage ?: "PDF capture failed"
-                            } finally { saving = false }
+                        try {
+                            printOriginalPage(view, reader!!)
+                            readerStatus = if (sr) "Sačuvaj kroz Android · zatim dodaj PDF" else "Save with Android · then attach PDF"
+                        } catch (failure: Exception) {
+                            readerStatus = failure.localizedMessage ?: "Printing unavailable"
                         }
-                    }) { Text(if (sr) "Sačuvaj originalni PDF" else "Save original PDF", fontSize = 12.sp) }
-                    Spacer(Modifier.weight(1f))
-                    Text(if (saving) "…" else readerStatus, color = muted, fontSize = 11.sp,
-                        maxLines = 1)
+                    }) { Text(if (sr) "Sačuvaj PDF" else "Save PDF", fontSize = 12.sp) }
+                    TextButton(onClick = { attachPDF.launch(arrayOf("application/pdf")) }) {
+                        Text(if (sr) "Dodaj PDF" else "Attach PDF", fontSize = 12.sp)
+                    }
                 }
+                if (readerStatus.isNotEmpty()) Text(readerStatus, color = muted,
+                    fontSize = 11.sp, modifier = Modifier.padding(horizontal = 18.dp, vertical = 2.dp),
+                    maxLines = 1, overflow = TextOverflow.Ellipsis)
             } else if (screen == Screen.SETTINGS) {
                 Header(label = if (sr) "Podešavanja" else "Settings", isDark = isDark,
                     onHome = { home() }, onArchive = {}, onSettings = {}, showControls = false)
@@ -234,15 +253,13 @@ private fun SitoRoot() {
             } else if (screen == Screen.ARCHIVE) {
                 Header(label = if (sr) "Arhiva" else "Archive", isDark = isDark,
                     onHome = { home() }, onArchive = {}, onSettings = {}, showControls = false)
-                key(savedNonce) {
-                    ArchiveScreen(archive, sr, foreground, muted,
-                        onOpen = { reader = it; screen = Screen.READER },
-                        onPDF = { pdfArticle = it; screen = Screen.PDF }, pdfs = pdfs,
-                        onToggle = { article ->
-                            archive.bookmark(article.id, !article.bookmark)
-                            savedNonce++
-                        })
-                }
+                ArchiveScreen(archive, sr, foreground, muted, savedNonce,
+                    onOpen = { reader = it; screen = Screen.READER },
+                    onPDF = { pdfArticle = it; screen = Screen.PDF }, pdfs = pdfs,
+                    onToggle = { article ->
+                        archive.bookmark(article.id, !article.bookmark)
+                        savedNonce++
+                    })
             } else {
                 Header(label = "SITO", isDark = isDark,
                     onHome = ::logoTap,
@@ -261,9 +278,13 @@ private fun SitoRoot() {
                 }
 
                 val active = currentSources.filter { it.region == region && settings.enabled(it.id, it.defaultOn) }
-                val available = feed.filter { it.region == region }
-                val filtered = available.filter { sourceFilter == null || it.sourceID == sourceFilter }
-                    .filter { topic == Topic.ALL || TopicRules.classify(it) == topic }
+                val filtered by remember(region, topic, sourceFilter) {
+                    derivedStateOf {
+                        feed.filter { it.region == region }
+                            .filter { sourceFilter == null || it.sourceID == sourceFilter }
+                            .filter { topic == Topic.ALL || TopicRules.classify(it) == topic }
+                    }
+                }
 
                 if (sourceFilter == null) {
                     ScrollableTabRow(selectedTabIndex = visibleTopics.indexOf(topic).coerceAtLeast(0), edgePadding = 14.dp,
@@ -285,7 +306,7 @@ private fun SitoRoot() {
                 }
                 if (showSources) AlertDialog(onDismissRequest = { showSources = false },
                     title = { Text(if (sr) "Izvor" else "Publisher") },
-                    text = { Column {
+                    text = { Column(Modifier.heightIn(max = 480.dp).verticalScroll(rememberScrollState())) {
                         TextButton(onClick = { sourceFilter = null; topic = Topic.ALL; showSources = false }) {
                             Text(if (sr) "Svi izvori" else "All sources")
                         }
@@ -317,19 +338,22 @@ private fun SitoRoot() {
                 BoxWithConstraints(Modifier.fillMaxSize()) {
                     val pageHeight = maxHeight
                     val snap = rememberSnapFlingBehavior(listState)
-                    LazyColumn(modifier = Modifier.fillMaxSize().then(pointer), state = listState,
-                        flingBehavior = if (paged) snap else ScrollableDefaults.flingBehavior(),
-                        contentPadding = if (paged) PaddingValues(0.dp)
-                            else PaddingValues(horizontal = 18.dp, vertical = 12.dp),
-                        verticalArrangement = Arrangement.spacedBy(if (paged) 0.dp else if (compact) 9.dp else 16.dp)) {
-                        items(filtered, key = { it.id }) { item ->
-                            Box(Modifier.fillMaxWidth()
-                                .then(if (paged) Modifier.height(pageHeight).padding(horizontal = 18.dp, vertical = 9.dp).clipToBounds()
-                                    else Modifier)) {
-                                StoryCardAndroid(item, compact && !paged, isDark, foreground, muted,
-                                    fullHeight = paged,
-                                    onOpen = { reader = item; screen = Screen.READER },
-                                    onBookmark = { archive.bookmark(item.id, true); savedNonce++ })
+                    PullToRefreshBox(isRefreshing = loading && feed.isNotEmpty(),
+                        onRefresh = { if (!loading) refreshNonce++ }, modifier = Modifier.fillMaxSize()) {
+                        LazyColumn(modifier = Modifier.fillMaxSize().then(pointer), state = listState,
+                            flingBehavior = if (paged) snap else ScrollableDefaults.flingBehavior(),
+                            contentPadding = if (paged) PaddingValues(0.dp)
+                                else PaddingValues(horizontal = 18.dp, vertical = 12.dp),
+                            verticalArrangement = Arrangement.spacedBy(if (paged) 0.dp else if (compact) 9.dp else 16.dp)) {
+                            items(filtered, key = { it.id }) { item ->
+                                Box(Modifier.fillMaxWidth()
+                                    .then(if (paged) Modifier.height(pageHeight).padding(horizontal = 18.dp, vertical = 9.dp).clipToBounds()
+                                        else Modifier)) {
+                                    StoryCardAndroid(item, compact && !paged, isDark, foreground, muted,
+                                        fullHeight = paged,
+                                        onOpen = { reader = item; screen = Screen.READER },
+                                        onBookmark = { archive.bookmark(item.id, true); savedNonce++ })
+                                }
                             }
                         }
                     }
@@ -375,17 +399,19 @@ private fun StoryCardAndroid(article: Article, compact: Boolean, dark: Boolean, 
         if (article.image != null && !compact) {
             AsyncImage(model = article.image, contentDescription = null,
                 contentScale = ContentScale.Crop, modifier = Modifier.fillMaxWidth()
-                    .height(190.dp).background(if (dark) Color.DarkGray else Color.LightGray,
+                    .height(if (fullHeight) 120.dp else 190.dp).background(if (dark) Color.DarkGray else Color.LightGray,
                         RoundedCornerShape(12.dp)))
             Spacer(Modifier.height(15.dp))
         }
         Text(article.title, color = foreground, fontFamily = FontFamily.Serif,
             fontSize = if (compact) 20.sp else 26.sp, lineHeight = if (compact) 26.sp else 34.sp,
-            fontWeight = FontWeight.Normal)
+            fontWeight = FontWeight.Normal, maxLines = if (fullHeight) 4 else Int.MAX_VALUE,
+            overflow = TextOverflow.Ellipsis)
         if (!compact && article.summary.isNotBlank()) {
             Spacer(Modifier.height(13.dp))
             Text(article.summary, color = muted, fontFamily = FontFamily.Serif,
-                fontSize = 17.sp, lineHeight = 26.sp, maxLines = 6, overflow = TextOverflow.Ellipsis)
+                fontSize = 17.sp, lineHeight = 26.sp, maxLines = if (fullHeight) 3 else 6,
+                overflow = TextOverflow.Ellipsis)
         }
         if (fullHeight) Spacer(Modifier.weight(1f))
         Spacer(Modifier.height(13.dp))
@@ -424,11 +450,15 @@ private fun ArticleBrowser(article: Article, dark: Boolean, modifier: Modifier =
 
 @Composable
 private fun ArchiveScreen(store: LocalStore, sr: Boolean, foreground: Color, muted: Color,
-                          pdfs: PDFStore, onOpen: (Article) -> Unit,
+                          revision: Int, pdfs: PDFStore, onOpen: (Article) -> Unit,
                           onPDF: (Article) -> Unit, onToggle: (Article) -> Unit) {
     var query by remember { mutableStateOf("") }
     var bookmarksOnly by remember { mutableStateOf(false) }
-    val stories = remember(query, bookmarksOnly) { store.archive(query, bookmarksOnly) }
+    var stories by remember { mutableStateOf<List<Article>>(emptyList()) }
+    LaunchedEffect(query, bookmarksOnly, revision) {
+        kotlinx.coroutines.delay(140)
+        stories = withContext(Dispatchers.IO) { store.archive(query, bookmarksOnly) }
+    }
     Column(Modifier.fillMaxSize()) {
         OutlinedTextField(value = query, onValueChange = { query = it },
             label = { Text(if (sr) "Pretraži arhivu" else "Search history") },

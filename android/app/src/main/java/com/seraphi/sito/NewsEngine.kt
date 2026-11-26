@@ -58,6 +58,11 @@ data class Article(
     val textCheckedAt: Long? = null,
     val textOrigin: String? = null,
     val previewText: String? = null,
+    val sourceStatus: String? = null,
+    val canonicalURL: String? = null,
+    val languageCode: String? = null,
+    val modifiedAt: Long? = null,
+    val textCapturedAt: Long? = null,
 )
 
 fun Article.hasFullText(): Boolean {

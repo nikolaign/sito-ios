@@ -1,6 +1,7 @@
 package com.seraphi.sito
 
 import android.content.Intent
+import android.content.ContextWrapper
 import android.net.Uri
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
@@ -62,7 +63,9 @@ private fun GateAtmosphere() {
 internal fun DreamGateJourneyAndroid(articles: List<Article>, sr: Boolean, onExit: () -> Unit) {
     val context = LocalContext.current
     val narrator = remember { GateNarrator(context.applicationContext) }
-    val activity = context as ComponentActivity
+    val activity = generateSequence(context as android.content.Context?) { current ->
+        (current as? ContextWrapper)?.baseContext?.takeUnless { it === current }
+    }.filterIsInstance<ComponentActivity>().firstOrNull()
     val prefs = remember { context.getSharedPreferences("seraphi-gate-state", android.content.Context.MODE_PRIVATE) }
     var cycle by remember { mutableIntStateOf(prefs.getInt("cycle", 0)) }
     var room by remember { mutableIntStateOf(9) }
@@ -128,7 +131,7 @@ internal fun DreamGateJourneyAndroid(articles: List<Article>, sr: Boolean, onExi
         if (phase == JourneyPhase.PLAYING || phase == JourneyPhase.RECKONING) {
             while (true) {
                 delay(1000)
-                if (activity.lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED)) time--
+                if (activity?.lifecycle?.currentState?.isAtLeast(Lifecycle.State.RESUMED) != false) time--
                 if (time <= 0) { failed(); break }
             }
         }
