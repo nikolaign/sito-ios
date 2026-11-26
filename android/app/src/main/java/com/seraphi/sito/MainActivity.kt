@@ -1,6 +1,9 @@
 package com.seraphi.sito
 
 import android.os.Bundle
+import android.os.PowerManager
+import android.net.ConnectivityManager
+import android.net.NetworkCapabilities
 import android.webkit.WebView
 import android.webkit.WebViewClient
 import androidx.activity.ComponentActivity
@@ -96,6 +99,13 @@ private fun SitoRoot() {
     var topicsNonce by remember { mutableIntStateOf(0) }
     val visibleTopics = remember(topicsNonce) { settings.visibleTopics() }
     var sourcesDirty by remember { mutableStateOf(false) }
+    val scope = rememberCoroutineScope()
+    val cloudOptions = remember { CloudOptions(context.applicationContext) }
+    fun connectedWifi(): Boolean {
+        val network = context.getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
+        return network.getNetworkCapabilities(network.activeNetwork)
+            ?.hasTransport(NetworkCapabilities.TRANSPORT_WIFI) == true
+    }
     fun home() {
         screen = Screen.FEED
         reader = null
@@ -114,6 +124,26 @@ private fun SitoRoot() {
             feed.addAll(NewsEngine.mixed(results))
             updatedAt = System.currentTimeMillis()
             if (results.isEmpty()) failure = if (sr) "Izvori trenutno nisu dostupni" else "Sources temporarily unavailable"
+            if (results.isNotEmpty()) {
+                val now = System.currentTimeMillis()
+                val wifi = connectedWifi()
+                val power = context.getSystemService(Context.POWER_SERVICE) as PowerManager
+                if (!power.isPowerSaveMode) {
+                    if (settings.autoComplete && (!settings.autoCompleteWifiOnly || wifi) &&
+                        now - settings.lastAutoComplete >= 45L * 60_000L) {
+                        settings.lastAutoComplete = now
+                        scope.launch {
+                            runCatching { ArchiveTools.complete(archive, 4) { _, _ -> } }
+                        }
+                    }
+                    if (cloudOptions.automatic && (!cloudOptions.wifiOnly || wifi) &&
+                        now - cloudOptions.lastBackup >= 24L * 3_600_000L) {
+                        scope.launch {
+                            runCatching { CloudArchive(cloudOptions).backup(archive) { } }
+                        }
+                    }
+                }
+            }
         } catch (error: Exception) {
             failure = error.localizedMessage ?: "Network error"
         } finally {
@@ -137,7 +167,7 @@ private fun SitoRoot() {
                     onHome = { home() }, onArchive = {}, onSettings = {}, showControls = false)
                 SettingsScreen(
                     sr = sr, foreground = foreground, muted = muted, currentSources = currentSources,
-                    settings = settings, language = language, theme = theme, compact = compact,
+                    settings = settings, archive = archive, language = language, theme = theme, compact = compact,
                     paged = paged, advanced = advanced,
                     onLanguage = { language = it; settings.language = it },
                     onTheme = { theme = it; settings.theme = it },

@@ -1,0 +1,3 @@
+[submodule "android/app/src/main/cpp/lzfse"]
+    path = android/app/src/main/cpp/lzfse
+    url = https://github.com/lzfse/lzfse.git

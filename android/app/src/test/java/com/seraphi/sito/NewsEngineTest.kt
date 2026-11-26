@@ -50,4 +50,33 @@ class NewsEngineTest {
         assertEquals(11, mixed.size)
         assertTrue(mixed.take(2).map { it.sourceID }.toSet().size == 2)
     }
+
+    @Test fun customDirectoryAcceptsOpmlAndJson() {
+        val opml = """<?xml version="1.0"?><opml version="2.0"><body>
+            <outline title="Technology"><outline text="Example" xmlUrl="https://example.org/rss" /></outline>
+            </body></opml>"""
+        val fromOpml = SourceDirectory.parse(opml)
+        assertEquals("Example", fromOpml.single().name)
+        assertEquals("Technology", fromOpml.single().group)
+        val json = """{"feeds":[{"title":"Radio","feed_url":"https://example.org/radio.xml"}]}"""
+        assertEquals("Radio", SourceDirectory.parse(json).single().name)
+    }
+
+    @Test fun sourceDirectoryPromotesPlainHttpToHttps() {
+        assertEquals("https://example.org/feed", SourceDirectory.secureURL("http://example.org/feed"))
+        assertNull(SourceDirectory.secureURL("javascript:alert(1)"))
+    }
+
+    @Test fun neverAcceptRumorsFromRaspadListing() {
+        val source = Sources.curated.first { it.id == "raspad" }
+        val sample = """<ul><li class="dayhdr">25. novembar</li>
+            <li class="item" id="c-OK"><span class="st potvrdjeno">potvrđeno</span>
+              <div class="title">Confirmed event</div><div class="text">Verified report</div>
+              <div class="time">13:40</div></li>
+            <li class="item" id="c-NO"><span class="st nepotvrdjeno">glasina</span>
+              <div class="title">Unconfirmed event</div></li></ul>"""
+        val items = NewsEngine.parseRaspad(sample, source)
+        assertEquals(1, items.size)
+        assertEquals("raspad|c-OK", items.single().id)
+    }
 }

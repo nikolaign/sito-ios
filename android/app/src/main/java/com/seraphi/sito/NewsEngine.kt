@@ -55,7 +55,19 @@ data class Article(
     val author: String? = null,
     val fullText: String? = null,
     val bookmark: Boolean = false,
+    val textCheckedAt: Long? = null,
+    val textOrigin: String? = null,
+    val previewText: String? = null,
 )
+
+fun Article.hasFullText(): Boolean {
+    val body = fullText?.trim().orEmpty()
+    if (body.isBlank()) return false
+    return if (textOrigin == "feed") {
+        body.length >= 650 && body.length >= summary.length + 180 &&
+            (body.split("\n\n").count { it.length >= 65 } >= 2 || body.length >= 1800)
+    } else body.length >= 500
+}
 
 object Sources {
     val curated = listOf(
@@ -155,19 +167,26 @@ object NewsEngine {
             val destination = normalizeHttpURL(link) ?: return@mapNotNull null
             if (title.isBlank()) return@mapNotNull null
             val summary = clean(entry.childText("description").ifEmpty { entry.childText("summary") })
-            val content = clean(entry.childText("content:encoded").ifEmpty { entry.childText("content") })
+            val rawContent = entry.getElementsByTag("content:encoded").firstOrNull()?.html()
+                ?: entry.getElementsByTag("content").firstOrNull()?.html().orEmpty()
+            val content = FullTextExtractor.plainText(rawContent)
             val image = listOf("media:thumbnail", "media:content", "enclosure").firstNotNullOfOrNull { name ->
                 normalizeHttpURL(entry.getElementsByTag(name).firstOrNull()?.attr("url").orEmpty())
             } ?: findImage(entry.childText("description") + entry.childText("content:encoded"))
             Article(
-                id = digest(source.id + ":" + destination), sourceID = source.id,
+                id = source.id + "|" + entry.childText("guid")
+                    .ifBlank { entry.childText("id") }.ifBlank { destination }, sourceID = source.id,
                 sourceName = source.name, region = source.region,
                 title = clean(title), summary = summary, url = destination,
                 image = image, published = parseDate(entry.childText("pubDate")
                     .ifEmpty { entry.childText("published") }.ifEmpty { entry.childText("updated") }),
                 categories = entry.getElementsByTag("category").map { it.text() }.filter { it.isNotBlank() },
                 author = entry.childText("dc:creator").ifBlank { entry.childText("author") }.ifBlank { null },
-                fullText = content.takeIf { it.length >= 650 && it.length >= summary.length + 180 },
+                fullText = content.takeIf { candidate ->
+                    candidate.length >= 650 && candidate.length >= summary.length + 180 &&
+                        (candidate.split("\n\n").count { it.length >= 65 } >= 2 || candidate.length >= 1800)
+                },
+                textOrigin = "feed",
             )
         }.distinctBy { it.url }
     }
@@ -184,13 +203,15 @@ object NewsEngine {
                     val a = attachments?.optJSONObject(n)
                     if (a?.optString("mime_type")?.startsWith("image/") == true) normalizeHttpURL(a.optString("url")) else null
                 }
-            val content = clean(item.optString("content_html").ifEmpty { item.optString("content_text") })
+            val content = FullTextExtractor.plainText(item.optString("content_html")
+                .ifEmpty { item.optString("content_text") })
             Article(
-                id = digest(source.id + ":" + destination), sourceID = source.id,
+                id = source.id + "|" + item.optString("id").ifBlank { destination }, sourceID = source.id,
                 sourceName = source.name, region = source.region, title = title,
                 summary = clean(item.optString("summary")), url = destination, image = image,
                 published = parseDate(item.optString("date_published")),
-                fullText = content.takeIf { it.length >= 650 },
+                fullText = content.takeIf { it.length >= 650 && it.length >= 180 + item.optString("summary").length },
+                textOrigin = "feed",
             )
         }
     }
@@ -286,6 +307,4 @@ object NewsEngine {
         return Date().time
     }
 
-    private fun digest(value: String): String = MessageDigest.getInstance("SHA-256")
-        .digest(value.toByteArray(Charsets.UTF_8)).joinToString("") { "%02x".format(it) }
 }

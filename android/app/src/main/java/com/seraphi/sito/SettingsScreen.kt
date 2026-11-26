@@ -19,7 +19,7 @@ import androidx.compose.ui.unit.sp
 @Composable
 internal fun SettingsScreen(
     sr: Boolean, foreground: Color, muted: Color,
-    currentSources: List<Source>, settings: SettingsStore,
+    currentSources: List<Source>, settings: SettingsStore, archive: LocalStore,
     language: String, theme: String, compact: Boolean, paged: Boolean, advanced: Boolean,
     onLanguage: (String) -> Unit, onTheme: (String) -> Unit,
     onCompact: (Boolean) -> Unit, onPaged: (Boolean) -> Unit, onAdvanced: (Boolean) -> Unit,
@@ -34,8 +34,14 @@ internal fun SettingsScreen(
     var error by remember { mutableStateOf("") }
     var showTopics by remember { mutableStateOf(false) }
     var showCatalogue by remember { mutableStateOf(false) }
+    var showArchiveTools by remember { mutableStateOf(false) }
     val context = LocalContext.current
 
+    if (showArchiveTools) {
+        ArchiveToolsScreen(context, archive, sr, foreground, muted,
+            onBack = { showArchiveTools = false })
+        return
+    }
     if (showCatalogue) {
         SourceDirectoryScreen(sr, settings, context, foreground, muted,
             onBack = { showCatalogue = false }, onAdded = onSourcesChanged)
@@ -113,6 +119,9 @@ internal fun SettingsScreen(
         if (advanced) {
             TextButton(onClick = { showCatalogue = true }) {
                 Text(if (sr) "Istraži kataloge RSS izvora" else "Explore RSS source catalogues")
+            }
+            TextButton(onClick = { showArchiveTools = true }) {
+                Text(if (sr) "Arhiva, dopuna teksta i backup" else "Archive, complete texts & backup")
             }
         }
         HorizontalDivider(color = muted.copy(alpha = 0.2f))

@@ -29,6 +29,9 @@ android {
     }
     kotlinOptions { jvmTarget = "17" }
     buildFeatures { compose = true }
+    externalNativeBuild {
+        cmake { path = file("src/main/cpp/CMakeLists.txt") }
+    }
     packaging { resources.excludes += "/META-INF/{AL2.0,LGPL2.1}" }
 }
 
@@ -44,4 +47,6 @@ dependencies {
     implementation("org.jsoup:jsoup:1.21.2")
     implementation("io.coil-kt:coil-compose:2.7.0")
     testImplementation("junit:junit:4.13.2")
+    // Android's org.json classes are stubs under local JVM tests.
+    testImplementation("org.json:json:20240303")
 }
